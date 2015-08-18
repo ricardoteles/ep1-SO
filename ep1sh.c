@@ -2,38 +2,46 @@
 #include <string.h>
 #include <unistd.h>
 
-char *diretorio;
+char *path;
+char format[80] = "";
 
 void shell(char* line);
+void criaPrefixoShell();
 
-int main() {
-	char shellName[80] = "";
-	diretorio = getcwd (NULL,0);
+int main() {	
+	criaPrefixoShell();
 	
-	strcat(shellName, "[");
-	strcat(shellName, diretorio);
-	strcat(shellName, "] ");
-
 	printf("\n---------- SHELL EP1 ----------\n\n");
 
-	char* line = readline(shellName);
+	char* line = readline(format);
 
 	while(strcmp(line,"exit") != 0){
 		add_history (line);
 
 		shell(line);
 
-		line = readline(shellName);
+		line = readline(format);
 	}
 	return 0;
 }
 
+void criaPrefixoShell(){
+	path = getcwd (NULL,0);
+	format[0] = '\0';
+	strcat(format, "[");				
+	strcat(format, path);
+	strcat(format, "] ");	
+}
+
 void shell(char* line){
+	//quebra o line em comando e argumento
+
 	if(strcmp(line,"cd") == 0){
-		printf("CD\n");
+		chdir(line);
+		criaPrefixoShell();
 	}
 	else if(strcmp(line,"pwd") == 0){
-		printf("%s\n", diretorio);	
+		printf("%s\n", path);	
 	}
 	else if(strcmp(line,"/bin/ls -1") == 0){
 		printf("Eh isso daqui: /bin/ls -1\n");
