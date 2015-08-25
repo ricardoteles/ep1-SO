@@ -1,6 +1,11 @@
+//http://thobias.org/doc/er_c.html
+
 #include <readline/readline.h>
-#include <string.h>
 #include <unistd.h>
+#include <regex.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #define LINMAX 10
 #define COLMAX 50
@@ -17,22 +22,21 @@ void imprimeCommand();
 
 /****************************************/
 
-int main() {	
-	criaPrefixoShell();
-	
-	printf("\n---------- SHELL EP1 ----------\n\n");
 
+int main() {
+	criaPrefixoShell();
+	printf("\n--------------------- SHELL EP1 ---------------------\n\n");
 	char* line = readline(format);
 
-	while(strcmp(line,"exit") != 0){
+	do {
 		add_history (line);
 		apagaMatriz();
 		parserCommand(line);
 		shell();
-		imprimeCommand();
-
+		//imprimeCommand();
 		line = readline(format);
-	}
+	} while(1);
+
 	return 0;
 }
 
@@ -44,40 +48,45 @@ void criaPrefixoShell(){
 	strcat(format, "] ");	
 }
 
+
 void shell(){
-	if(strcmp(command[0],"cd") == 0){
+	if (strcmp(command[0],"cd") == 0) {
 		chdir(command[1]);
 		criaPrefixoShell();
 	}
-	else if(strcmp(command[0],"pwd") == 0){
+	else if (strcmp(command[0],"pwd") == 0) {
 		printf("%s\n", path);	
 	}
-	else if(strcmp(command[0],"/bin/ls") == 0){
+	else if (strcmp(command[0],"/bin/ls") == 0) {
 		char *argv[] = {command[0], command[1], NULL};
-		if(fork() == 0){
+		if (fork() == 0) {
+    		//char* env[] = {(char*) 0};
+			//char* cmd[] = {"/bin/ls", "-1", (char*) 0};
 			execve(command[0], argv, NULL);
 		}
-		else{
+		else {
 			waitpid(-1, 0, 0);
 		}
 	}
-	else if(strcmp(command[0],"./ep1") == 0){
-		if(fork() == 0){
-			if(command[4][0] != '\0'){
-				char *argv[] = {command[0], command[1], command[2], command[3], command[4], NULL};
-				execve(command[0], argv, NULL);
-			}
-			else{
-				char *argv[] = {command[0], command[1], command[2], command[3], NULL};
-				execve(command[0], argv, NULL);
-			}
+	else if (strcmp(command[0], "./ep1") == 0) {
+		char *argv[] = {command[0], command[1], command[2], command[3], NULL};
+		if (command[4][0] != 0) {
+			//argv[] = {command[0], command[1], command[2], command[3], command[4], NULL};
+			argv[4] = command[4];
 		}
-		else{
+
+		if (fork() == 0) {
+			execve(command[0], argv, NULL);
+		}
+		else {
 			waitpid(-1, 0, 0);
 		}
 	}
-	else{
-		printf("comando invalido\n");
+	else if (strcmp(command[0], "exit") == 0){
+		exit(0);
+	}
+	else {
+		fprintf(stderr, "comando %s inválido!\n", command[0]);
 	}
 }
 
