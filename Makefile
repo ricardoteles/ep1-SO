@@ -7,7 +7,7 @@ obj = ep1.o ep1sh.o
 
 all: ep1 ep1sh
 
-ep1: ep1.o
+ep1: ep1.o -lpthread
 	$(cc) -o $@ $^ 
 
 ep1sh: ep1sh.o -lreadline
