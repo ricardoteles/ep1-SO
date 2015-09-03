@@ -19,6 +19,7 @@ int numEscalonamento = 0;
 FILE* arqEntrada = NULL;  
 FILE* arqSaida = NULL;
 char d = '0';
+//int ncores;
 
 /************* ASSINATURA DAS FUNCOES ******************/
 void parserEntrada(int argc, char* argv[]);
@@ -45,7 +46,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	for(i = 0; i < NUM_PROCESSOS; i++){
-		while(tempoDesdeInicio() < entradaProcessos[i].t0);
+		while(tempoDesdeInicio() < entradaProcessos[i].t0) sleep(1);
 		
 		if(pthread_create(&procs[i], NULL, processo, (void *) &entradaProcessos[i])){
             printf("\n ERROR creating thread %ld\n", i);
@@ -89,6 +90,10 @@ void parserEntrada(int argc, char* argv[]){
 		arqEntrada = fopen(argv[2], "r");  
 		arqSaida = fopen(argv[3], "w");;
 
+		// descobre a qtde de nucleos do computador
+		// ncores = sysconf(_SC_NPROCESSORS_ONLN);
+		// printf("# cores: %d\n", ncores);
+
 		if(argc == 5 && argv[4][0] == 'd') {
 			d = 'd';
 			printf("%c\n", argv[4][0]);
@@ -110,8 +115,6 @@ int compare_arrive(const void *a,const void *b) {
 	return 0;
 }
 
-/************* FUNCOES APENAS PARA TESTE *************/
-
 float tempoDesdeInicio(){
 	float timedif;
 
@@ -121,6 +124,9 @@ float tempoDesdeInicio(){
 
 	return timedif;
 }
+
+/************* FUNCOES APENAS PARA TESTE *************/
+
 
 void imprime(PROC entradaProcessos[]){
 	int i;
