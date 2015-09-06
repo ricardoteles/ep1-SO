@@ -2,112 +2,265 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
-// #include <semaphore.h>
+#include <semaphore.h>
 
-#define NUM_PROCESSOS 8
+#define NMAX_PROCS 100
 
-typedef struct{
+typedef struct {
 	float t0, dt, deadline;
 	char nome[50];
-	int p;
-} PROC;
+	int p, id;
+} PROCESS;
 
+typedef struct no {
+	struct no* next;
+	PROCESS proc;
+} Node;
+
+
+/********************** VARIAVEIS GLOBAIS ****************************/
 struct timeval inicio, fim;
+int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
+FILE* arqEntrada, *arqSaida;
+Node *head, *tail;
 
-/************* VARIAVEIS GLOBAIS ***********************/
-int numEscalonamento = 0;
-FILE* arqEntrada = NULL;  
-FILE* arqSaida = NULL;
-char d = '0';
-//int ncores;
+sem_t semCore, semThread[NMAX_PROCS];
+sem_t emptyBuf, fullBuf; 
+
+PROCESS* buffer[NMAX_PROCS];
 
 /************* ASSINATURA DAS FUNCOES ******************/
-void parserEntrada(int argc, char* argv[]);
-void inicializaProcessos(PROC entradaProcessos[]);
-void *processo(void *a);
+void parserArgumentosEntrada(int argc, char* argv[]);
+void leArquivoEntrada(PROCESS listaProcessos[]);
 int compare_arrive(const void *a,const void *b);
 float tempoDesdeInicio();
-void imprime(PROC entradaProcessos[]);
+void imprime(PROCESS listaProcessos[]);
+void* mallocSeguro(size_t bytes);
+void inicializacao();
+
+/*** QUEUE ***/
+void initQueue();
+void insertOrderedByArrivedQueue(PROCESS proc);
+void removeQueue();
+int emptyQueue();
+PROCESS getNextQueue();
+
+
+/*** THREADS DO SIMULADOR ***/
+void *Processo(void *a);
+void *Escalonador(void *a);
 
 /*******************************************************/
 
 int main(int argc, char* argv[]) {
 	gettimeofday(&inicio, NULL);
 	
-	PROC entradaProcessos[NUM_PROCESSOS];				// TODO: criar um vetor com tamanho variavel
-	pthread_t procs[NUM_PROCESSOS];
-	long i;
-
-	parserEntrada(argc, argv);
-	inicializaProcessos(entradaProcessos);
+	PROCESS listaProcessos[NMAX_PROCS];
+	pthread_t procs[NMAX_PROCS];
+	pthread_t escalonador;
 	
-	if(numEscalonamento == 1){
-		qsort(entradaProcessos,NUM_PROCESSOS,sizeof(PROC),compare_arrive);
+	long i;
+	int rear = 0;
+
+	parserArgumentosEntrada(argc, argv);
+	leArquivoEntrada(listaProcessos);
+	inicializacao();
+	imprime(listaProcessos);
+
+	if (numEscalonamento == 1) {
+		qsort(listaProcessos, NMAX_PROCS, sizeof(PROCESS), compare_arrive);
 	}
 
-	for(i = 0; i < NUM_PROCESSOS; i++){
-		while(tempoDesdeInicio() < entradaProcessos[i].t0) sleep(1);
+	if (pthread_create(&escalonador, NULL, Escalonador, (void *) NULL)) {
+        printf("\n ERROR creating thread Escalonador\n");
+        exit(1);
+    }
+
+	for (i = 0; i < nProcs; i++) {
+		while (tempoDesdeInicio() < listaProcessos[i].t0) sleep(1);
 		
-		if(pthread_create(&procs[i], NULL, processo, (void *) &entradaProcessos[i])){
-            printf("\n ERROR creating thread %ld\n", i);
+		/* thread raiz */
+		sem_wait(&emptyBuf);
+		buffer[rear] = &listaProcessos[i];
+		rear = (rear+1) % nProcs;
+		sem_post(&fullBuf);
+
+		if (pthread_create(&procs[i], NULL, Processo, (void *) &listaProcessos[i])) {
+            printf("\n ERROR creating thread procs[%ld]\n", i);
             exit(1);
         }
 	}
-
-	for(i = 0; i < NUM_PROCESSOS; i++){
-        if(pthread_join(procs[i], NULL)){
-            printf("\n ERROR joining thread\n");
-            exit(1);
+	
+	for (i = 0; i < nProcs; i++) {
+        if (pthread_join(procs[i], NULL)) {
+			printf("\n ERROR joining thread procs[%ld]\n", i);
+			exit(1);
         }
     }
 
-	fclose(arqEntrada);
+    if (pthread_join(escalonador, NULL)) {
+		printf("\n ERROR joining thread escalonador\n");
+		exit(1);
+    }
 
-	// printf("%f seg\n\n", tempoDesdeInicio());
+	fclose(arqEntrada);
+	fclose(arqSaida);
+	//printf("%f seg\n\n", tempoDesdeInicio());
 	return 0;
 }
 
-void *processo(void *a){
-	PROC *val = (PROC *) a;
+void inicializacao() {
+	long i;
+	for (i = 0; i < NMAX_PROCS; i++) 
+		buffer[i] = NULL;
 
-	printf("Ola eu sou o processo:  %s\n", val->nome);
+	if (sem_init(&semCore, 0, nCores)) {
+		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
+		exit(0);
+	}
+	if (sem_init(&emptyBuf, 0, nProcs)) {
+		fprintf(stderr, "ERRO ao criar semaforo emptyBuf\n");
+		exit(0);
+	}
+	if (sem_init(&fullBuf, 0, 0)) {
+		fprintf(stderr, "ERRO ao criar semaforo fullBuf\n");
+		exit(0);
+	}
+	for (i = 0; i < NMAX_PROCS; i++) {
+		if (sem_init(&semThread[i], 0, 0)) {
+			fprintf(stderr, "ERRO ao criar semaforo semThread[%ld]\n", i);
+			exit(0);
+		}
+	}
+}
+
+/****************************** THREADS ******************************/
+
+// TODO:
+void *Processo(void *a) {
+	PROCESS* val = (PROCESS*) a;
+
+	printf("val->id = %d\n", val->id);
+	sem_wait(&semThread[val->id]);
+	sem_wait(&semCore);
+	
+	while ((tempoDesdeInicio() - val->t0) < val->dt) {
+		printf("[Ola sou o processo:  %s]\n", val->nome);
+	}
+	
+	sem_post(&semCore);
+
+	return NULL;
+}
+
+// TODO:
+void *Escalonador(void *a) {
+	int deadProc = 0, front = 0;
+	initQueue();
+
+	if (numEscalonamento == 1) {
+		while (deadProc < nProcs) {
+			sem_wait(&fullBuf);
+			PROCESS* proc = buffer[front];
+			buffer[front] = NULL;
+			front = (front+1) % nProcs;
+			sem_post(&emptyBuf);
+			insertOrderedByArrivedQueue(*proc);
+			//sem_wait(&semCore);
+			sem_post(&semThread[getNextQueue().id]);
+			deadProc++;
+		}
+	}
 	
 	return NULL;
 }
 
-void inicializaProcessos(PROC entradaProcessos[]){
+/************************** FUNÇÕES AUXILIARES *******************************/
+
+void leArquivoEntrada(PROCESS listaProcessos[]){
 	int i = 0;
 
-	while (fscanf(arqEntrada,"%f %s %f %f %d", &entradaProcessos[i].t0, entradaProcessos[i].nome, 
-		&entradaProcessos[i].dt, &entradaProcessos[i].deadline, &entradaProcessos[i].p) != EOF) {		
+	while (fscanf(arqEntrada,"%f %s %f %f %d", &listaProcessos[i].t0, listaProcessos[i].nome, 
+		&listaProcessos[i].dt, &listaProcessos[i].deadline, &listaProcessos[i].p) != EOF) {		
+		listaProcessos[i].id = i;
 		i++;
 	}
+	nProcs = i;
 }
 
-void parserEntrada(int argc, char* argv[]){
-	if (argc == 4 || argc == 5) {
+void parserArgumentosEntrada(int argc, char* argv[]){
+	if (argc >= 4) {
 		numEscalonamento = atoi(argv[1]);
-		arqEntrada = fopen(argv[2], "r");  
+		arqEntrada = fopen(argv[2], "r");
+
+		if (!arqEntrada) {
+			fprintf(stderr, "ERRO ao abrir o arquivo %s\n", argv[2]);
+			exit(0);
+		}  
+		
 		arqSaida = fopen(argv[3], "w");;
 
 		// descobre a qtde de nucleos do computador
-		// ncores = sysconf(_SC_NPROCESSORS_ONLN);
-		// printf("# cores: %d\n", ncores);
+		nCores = sysconf(_SC_NPROCESSORS_ONLN);
+		printf("Escalonador: %s\n", argv[1]);
+		printf("Arquivo de entrada: %s\n", argv[2]);
+		printf("Arquivo de saida: %s\n", argv[3]);
+		printf("# cores: %d\n", nCores);
 
-		if(argc == 5 && argv[4][0] == 'd') {
-			d = 'd';
-			printf("%c\n", argv[4][0]);
+		if(argc >= 5 && argv[4][0] == 'd' && argv[4][1] == '\0') {
+			debug = 1;
+			printf("Opção debug ativada.\n");
 		}
 	}
 	else {
-		printf("ERRO no numero de argumentos\n");
+		printf("Formato esperado:\n./ep1 <num_escalonador (1-6)> <arq_entrada> <arq_saida> [d]\n");
 		exit(-2);
 	}
 }
 
+
+/************************** FUNÇÕES DE FILA *****************************/
+
+void initQueue() {
+	head = (Node*) mallocSeguro(sizeof(Node));
+	head->next = head;
+	tail = head;
+}
+
+void insertOrderedByArrivedQueue(PROCESS proc) {
+	Node* novo = (Node*) mallocSeguro(sizeof(Node));
+	novo->proc = proc;
+	novo->next = head;
+	tail->next = novo;
+	tail = novo;
+}
+
+void removeQueue() {
+	if(!emptyQueue()) {
+		Node* aux = head->next;
+		head->next = aux->next;
+		aux->next = NULL;
+		free(aux);
+		if (emptyQueue()) {
+			tail = head;
+		}
+	}
+}
+
+int emptyQueue() {
+	return (head->next == head);
+}
+
+// A fila não pode estar vazia para chamar a função
+PROCESS getNextQueue() {
+	return head->next->proc;
+}
+
+/************************ FUNÇÕES DE PROPÓSITO GERAL *********************/
+
 int compare_arrive(const void *a,const void *b) {
-	PROC *x = (PROC *) a;
-	PROC *y = (PROC *) b;
+	PROCESS *x = (PROCESS *) a;
+	PROCESS *y = (PROCESS *) b;
 
 	if (x->t0 < y->t0) return -1;
 	else if (x->t0 > y->t0) return 1; 
@@ -125,17 +278,26 @@ float tempoDesdeInicio(){
 	return timedif;
 }
 
+void* mallocSeguro(size_t bytes) {
+	void* p = malloc(bytes);
+	if (!p) {
+		fprintf(stderr, "ERRO na alocação de memória!\n");
+		exit(0);
+	}
+	return p;
+}
+
 /************* FUNCOES APENAS PARA TESTE *************/
 
-
-void imprime(PROC entradaProcessos[]){
+void imprime(PROCESS listaProcessos[]) {
 	int i;
 
-	for (i = 0; i < 8; i++) {
-		fprintf(arqSaida ,"Nome: %s\n", entradaProcessos[i].nome);
-		// fprintf(arqSaida ,"t0: %f\n", entradaProcessos[i].t0);
-		// fprintf(arqSaida ,"dt: %f\n", entradaProcessos[i].dt);
-		// fprintf(arqSaida ,"deadline: %f\n", entradaProcessos[i].deadline);
-		// fprintf(arqSaida ,"p: %d\n\n", entradaProcessos[i].p);
+	for (i = 0; i < nProcs; i++) {
+		// fprintf(arqSaida ,"Nome: %s\n", listaProcessos[i].nome);
+		// fprintf(arqSaida ,"t0: %f\n", listaProcessos[i].t0);
+		// fprintf(arqSaida ,"dt: %f\n", listaProcessos[i].dt);
+		// fprintf(arqSaida ,"deadline: %f\n", listaProcessos[i].deadline);
+		// fprintf(arqSaida ,"p: %d\n\n", listaProcessos[i].p);
+		printf("id: %d\n", listaProcessos[i].id);
 	}
 }
