@@ -12,87 +12,90 @@ typedef struct {
 	int p, id;
 } PROCESS;
 
-typedef struct no {
-	struct no* next;
-	PROCESS proc;
+typedef struct node* Link;
+
+typedef struct node {
+	int id;
+	Link next;
 } Node;
 
 
 /********************** VARIAVEIS GLOBAIS ****************************/
 int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
+PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
-Node *head, *tail;
 struct timeval inicio;
 float quantum = 0.5;
+Link head, tail;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue; 
 
-PROCESS* buffer[NMAX_PROCS];
+/*=============================== ASSINATURA DAS FUNCOES =======================================*/
 
-/************* ASSINATURA DAS FUNCOES ******************/
+/************* INICIALIZACAO ******************/
 void parserArgumentosEntrada(int argc, char* argv[]);
-void leArquivoEntrada(PROCESS listaProcessos[]);
+void leArquivoEntrada();
+void inicializacao();
+/*************  UTILS ******************/
 int compare_arrive(const void *a,const void *b);
 float tempoDesdeInicio(struct timeval inicio);
-void imprime(PROCESS listaProcessos[]);
 void* mallocSeguro(size_t bytes);
-void inicializacao();
-
-/*** QUEUE ***/
+void imprimeSaida();
+/*************  QUEUE ******************/
 void initQueue();
-void insertOrderedByArrivedQueue(PROCESS proc);
-void insertOrderedByJobQueue(PROCESS proc);
-void printQueue();
+void insertOrderedByArrivedQueue(int id);
+void insertOrderedByJobQueue(int id);
+void removeNextQueue(Link p);
 int emptyQueue();
-Node* getNextQueue(Node* p);
-void removeNextQueue(Node *p);
-void decreaseQuantumNextQueue(Node* p);
-
-/*** THREADS DO SIMULADOR ***/
+void printQueue();
+Link getNextQueue(Link p);
+void decreaseQuantumNextQueue(Link p);
+/*************  THREADS ******************/
 void *Processo(void *a);
 void *Escalonador(void *a);
-void FCFS_SJF(PROCESS *val);
-void roundRobin(PROCESS *val);
+void FCFS_SJF(int id);
 
-/*******************************************************/
+/*====================================== MAIN ==================================================*/
 
 int main(int argc, char* argv[]) {
 	gettimeofday(&inicio, NULL);
 	
-	PROCESS listaProcessos[NMAX_PROCS];
 	pthread_t procs[NMAX_PROCS];
 	pthread_t escalonador;
 	
 	long i;
-	int rear = 0;
+	int pos;
 
 	parserArgumentosEntrada(argc, argv);
-	leArquivoEntrada(listaProcessos);
+	leArquivoEntrada();
 	inicializacao();
 	initQueue();
-	//imprime(listaProcessos);
 
-	qsort(listaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
+	qsort(tabelaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
 	
+	for(pos = 0; pos < nProcs; pos++){
+		tabelaProcessos[pos].id = pos;	
+	}
+
 	if (pthread_create(&escalonador, NULL, Escalonador, (void *) NULL)) {
         printf("\n ERROR creating thread Escalonador\n");
         exit(1);
     }
 
 	for (i = 0; i < nProcs; i++) {
-		while (tempoDesdeInicio(inicio) < listaProcessos[i].t0) usleep(50000);
+		while (tempoDesdeInicio(inicio) < tabelaProcessos[i].t0) usleep(50000);
 		
-		if (pthread_create(&procs[i], NULL, Processo, (void *) &listaProcessos[i])) {
+		if (pthread_create(&procs[i], NULL, Processo, (void *) &tabelaProcessos[i].id)) {
             printf("\n ERROR creating thread procs[%ld]\n", i);
             exit(1);
         }
 
         if(numEscalonamento == 1){
-			insertOrderedByArrivedQueue(listaProcessos[i]);
+			insertOrderedByArrivedQueue(i);
 		}
 		else if(numEscalonamento == 2){
-			insertOrderedByJobQueue(listaProcessos[i]);
+			insertOrderedByJobQueue(i);
 		}
 
 		/* sinaliza que chegou um processo na fila */
@@ -117,75 +120,19 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
+/*====================================== FUNCOES ==================================================*/
 
-/****************************** THREADS ******************************/
-
-// TODO:
+/*************** THREADS **********************/
 void *Processo(void *a) {
-	PROCESS* val = (PROCESS*) a;
+	int* id = (int*) a;
 
 	if(numEscalonamento == 1 || numEscalonamento == 2) {
-		FCFS_SJF(val);
-	}
-
-	if(numEscalonamento == 4){
-		roundRobin(val);
+		FCFS_SJF(*id);
 	}
 
 	return NULL;
 }
 
-void roundRobin(PROCESS *val){
-	struct timeval inicioProcesso;
-	float quantumThread = quantum;
-	int cont = 0;
-	
-	while (tempoDesdeInicio(inicio) < val->deadline && val->dt > 0) {
-
-		if(val->dt < quantum) quantumThread = val->dt; 
-		
-		sem_wait(&semThread[val->id]);	
-		gettimeofday(&inicioProcesso, NULL);
-
-		while((tempoDesdeInicio(inicio) < val->deadline) &&
-			(tempoDesdeInicio(inicioProcesso) < quantumThread)){
-
-			if(cont < 3)
-				printf("[Operação] %s : %d\n", val->nome, cont);
-			cont++;
-		}
-
-		sem_post(&semCore);
-
-		val->dt -= quantumThread;	
-	}
-	
-
-}
-
-void FCFS_SJF(PROCESS *val){
-	struct timeval inicioProcesso;
-	int cont = 0, tmp1 = 1, tmp2 = 1;
-	
-	sem_wait(&semThread[val->id]);	
-	gettimeofday(&inicioProcesso, NULL);
-
-	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < val->dt)) 
-		&& (tmp2 = (tempoDesdeInicio(inicio) < val->deadline))) {
-		if(cont < 3)
-			printf("[Operação] %s : %d\n", val->nome, cont);
-		cont++;
-	}
-	
-	if (!tmp1 && tmp2)
-		printf("Sai por causa do dt: %s\n\n", val->nome);
-	else if (tmp1 && !tmp2)
-		printf("Sai por culpa do deadline: %s\n\n", val->nome);
-
-	sem_post(&semCore);
-}
-
-// TODO:
 void *Escalonador(void *a) {
 	int deadProc = 0, front = 0;
 
@@ -194,50 +141,49 @@ void *Escalonador(void *a) {
 			sem_wait(&semQueue);
 			
 			sem_wait(&semCore);
-			sem_post(&semThread[getNextQueue(head)->proc.id]);
+			sem_post(&semThread[getNextQueue(head)->id]);
 			removeNextQueue(head);
 			deadProc++;
 		} 
-	}
-
-	else if (numEscalonamento == 4) {
-		Node *p = head;
-
-		while (deadProc < nProcs) {
-			sem_wait(&semQueue);
-	
-			sem_wait(&semCore);
-			sem_post(&semThread[getNextQueue(p)->proc.id]);
-			decreaseQuantumNextQueue(p);
-			p = getNextQueue(p);
-		}	
 	}
 	
 	return NULL;
 }
 
-/************************** FUNÇÕES AUXILIARES *******************************/
+void FCFS_SJF(int id){
+	struct timeval inicioProcesso;
+	int cont = 0, tmp1 = 1, tmp2 = 1;
+	
+	sem_wait(&semThread[id]);	
+	gettimeofday(&inicioProcesso, NULL);
 
-void decreaseQuantumNextQueue(Node* p){
-	getNextQueue(p)->proc.dt -= quantum;
-
-	if(getNextQueue(p)->proc.dt <= 0){
-		removeNextQueue(p);
+	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt)) 
+		&& (tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline))) {
+		if(cont < 3)
+			printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
+		cont++;
 	}
-}
+	
+	if (!tmp1 && tmp2)
+		printf("Sai por causa do dt: %s\n\n", tabelaProcessos[id].nome);
+	else if (tmp1 && !tmp2)
+		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
 
-void leArquivoEntrada(PROCESS listaProcessos[]){
+	sem_post(&semCore);
+}
+/************* INICIALIZACAO ******************/
+void leArquivoEntrada() {
 	int i = 0;
 
-	while (fscanf(arqEntrada,"%f %s %f %f %d", &listaProcessos[i].t0, listaProcessos[i].nome, 
-		&listaProcessos[i].dt, &listaProcessos[i].deadline, &listaProcessos[i].p) != EOF) {		
-		listaProcessos[i].id = i;
-		i++;
+	while (fscanf(arqEntrada,"%f %s %f %f %d", &tabelaProcessos[i].t0, tabelaProcessos[i].nome, 
+		&tabelaProcessos[i].dt, &tabelaProcessos[i].deadline, &tabelaProcessos[i].p) != EOF) {		
+			i++;
 	}
+
 	nProcs = i;
 }
 
-void parserArgumentosEntrada(int argc, char* argv[]){
+void parserArgumentosEntrada(int argc, char* argv[]) {
 	if (argc >= 4) {
 		numEscalonamento = atoi(argv[1]);
 		arqEntrada = fopen(argv[2], "r");
@@ -269,17 +215,17 @@ void parserArgumentosEntrada(int argc, char* argv[]){
 
 void inicializacao() {
 	long i;
-	for (i = 0; i < NMAX_PROCS; i++) 
-		buffer[i] = NULL;
 
 	if (sem_init(&semCore, 0, 1)) {
 		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
 		exit(0);
 	}
+
 	if (sem_init(&semQueue, 0, 0)) {
 		fprintf(stderr, "ERRO ao criar semaforo semQueue\n");
 		exit(0);
 	}
+
 	for (i = 0; i < NMAX_PROCS; i++) {
 		if (sem_init(&semThread[i], 0, 0)) {
 			fprintf(stderr, "ERRO ao criar semaforo semThread[%ld]\n", i);
@@ -288,78 +234,7 @@ void inicializacao() {
 	}
 }
 
-/************************** FUNÇÕES DE FILA *****************************/
-
-void initQueue() {
-	head = (Node*) mallocSeguro(sizeof(Node));
-	head->next = head;
-	tail = head;
-}
-
-void insertOrderedByArrivedQueue(PROCESS proc) {
-	Node* novo = (Node*) mallocSeguro(sizeof(Node));
-	novo->proc = proc;
-	novo->next = head;
-	tail->next = novo;
-	tail = novo;
-}
- 
-void insertOrderedByJobQueue(PROCESS proc) {
-	Node* aux;
-	Node* novo = (Node*) mallocSeguro(sizeof(Node));
-	novo->proc = proc;
-
-	for (aux = head; aux != tail; aux = aux->next) {
-		if (proc.dt < aux->next->proc.dt) {
-			novo->next = aux->next;
-			aux->next = novo;
-			break;
-		}
-	}
-	if (aux == tail) {
-		novo->next = head;
-		aux->next = novo;
-		tail = novo; 
-	}
-}
-
-void printQueue() {
-	Node* aux;
-
-	printf("Fila:  ");
-	for (aux = head->next; aux != head; aux = aux->next) {
-		printf("%s   ", aux->proc.nome);
-	}
-	printf("\n");
-}
-
-void removeNextQueue(Node *p) {
-	if(!emptyQueue()) {
-		Node* aux = p->next;
-		p->next = aux->next;
-		aux->next = NULL;
-		free(aux);
-		if (emptyQueue()) {
-			tail = p;
-		}
-	}
-}
-
-int emptyQueue() {
-	return (head->next == head);
-}
-
-// A fila não pode estar vazia para chamar a função
-Node* getNextQueue(Node* p) {
-	if(p->next == head) {
-		p = head;
-	}
-
-	return p->next;
-}
-
-/************************ FUNÇÕES DE PROPÓSITO GERAL *********************/
-
+/************* UTILS ******************/
 int compare_arrive(const void *a,const void *b) {
 	PROCESS *x = (PROCESS *) a;
 	PROCESS *y = (PROCESS *) b;
@@ -370,7 +245,7 @@ int compare_arrive(const void *a,const void *b) {
 	return 0;
 }
 
-float tempoDesdeInicio(struct timeval inicio){
+float tempoDesdeInicio(struct timeval inicio) {
 	struct timeval fim;
 	float timedif;
 
@@ -390,17 +265,92 @@ void* mallocSeguro(size_t bytes) {
 	return p;
 }
 
-/************* FUNCOES APENAS PARA TESTE *************/
-
-void imprime(PROCESS listaProcessos[]) {
+void imprimeSaida() {
 	int i;
 
 	for (i = 0; i < nProcs; i++) {
-		// fprintf(arqSaida ,"Nome: %s\n", listaProcessos[i].nome);
-		// fprintf(arqSaida ,"t0: %f\n", listaProcessos[i].t0);
-		// fprintf(arqSaida ,"dt: %f\n", listaProcessos[i].dt);
-		// fprintf(arqSaida ,"deadline: %f\n", listaProcessos[i].deadline);
-		// fprintf(arqSaida ,"p: %d\n\n", listaProcessos[i].p);
-		printf("id: %d\n", listaProcessos[i].id);
+		// fprintf(arqSaida ,"Nome: %s\n", tabelaProcessos[i].nome);
+		// fprintf(arqSaida ,"t0: %f\n", tabelaProcessos[i].t0);
+		// fprintf(arqSaida ,"dt: %f\n", tabelaProcessos[i].dt);
+		// fprintf(arqSaida ,"deadline: %f\n", tabelaProcessos[i].deadline);
+		// fprintf(arqSaida ,"p: %d\n\n", tabelaProcessos[i].p);
+		printf("id: %d\n", tabelaProcessos[i].id);
+	}
+}
+
+/************************** QUEUE *****************************/
+void initQueue() {
+	head = (Link) mallocSeguro(sizeof(Node));
+	head->next = head;
+	tail = head;
+}
+
+void insertOrderedByArrivedQueue(int id) {
+	Link novo = (Link) mallocSeguro(sizeof(Node));
+	novo->id = id;
+	novo->next = head;
+	tail->next = novo;
+	tail = novo;
+}
+
+void insertOrderedByJobQueue(int id) {
+	Link aux;
+	Link novo = (Link) mallocSeguro(sizeof(Node));
+	novo->id = id;
+
+	for (aux = head; aux != tail; aux = aux->next) {
+		if (tabelaProcessos[id].dt < tabelaProcessos[aux->next->id].dt) {
+			novo->next = aux->next;
+			aux->next = novo;
+			break;
+		}
+	}
+	if (aux == tail) {
+		novo->next = head;
+		aux->next = novo;
+		tail = novo; 
+	}
+}
+
+void removeNextQueue(Link p) {
+	if(!emptyQueue()) {
+		Link aux = p->next;
+		p->next = aux->next;
+		aux->next = NULL;
+		free(aux);
+		if (emptyQueue()) {
+			tail = p;
+		}
+	}
+}
+
+int emptyQueue() {
+	return (head->next == head);
+}
+
+void printQueue() {
+	Link aux;
+
+	printf("Fila:  ");
+	for (aux = head->next; aux != head; aux = aux->next) {
+		printf("%s   ", tabelaProcessos[aux->id].nome);
+	}
+	printf("\n");
+}
+
+// A fila não pode estar vazia para chamar a função
+Link getNextQueue(Link p) {
+	if(p->next == head) {
+		p = head;
+	}
+
+	return p->next;
+}
+
+void decreaseQuantumNextQueue(Node* p) {
+	tabelaProcessos[getNextQueue(p)->id].dt -= quantum;
+
+	if(tabelaProcessos[getNextQueue(p)->id].dt <= 0){
+		removeNextQueue(p);
 	}
 }
