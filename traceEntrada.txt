@@ -1,8 +1,4 @@
-1.7002 proceso7 1 11 2
-1.7001 proceso5 1 11 2
-2.9 proceso6 1 11 2
-4 proceso3 1 11 2
-5 proceso2 1 11 2
-2.4 proceso4 1 11 2
-0.5 proceso0 1 11 2
-3 proceso1 1 11 2
+1.7002 proceso7 10 30 2
+2.7 proceso5 7 30 2
+3.9 proceso6 5 30 2
+5 proceso1 3 30 2

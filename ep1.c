@@ -22,6 +22,7 @@ typedef struct no {
 int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
 FILE* arqEntrada, *arqSaida;
 Node *head, *tail;
+struct timeval inicio;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t emptyBuf, fullBuf; 
@@ -40,7 +41,9 @@ void inicializacao();
 /*** QUEUE ***/
 void initQueue();
 void insertOrderedByArrivedQueue(PROCESS proc);
+void insertOrderedByJobQueue(PROCESS proc);
 void removeQueue();
+void printQueue();
 int emptyQueue();
 PROCESS getNextQueue();
 
@@ -53,7 +56,6 @@ void *Escalonador(void *a);
 /*******************************************************/
 
 int main(int argc, char* argv[]) {
-	struct timeval inicio;
 	gettimeofday(&inicio, NULL);
 	
 	PROCESS listaProcessos[NMAX_PROCS];
@@ -68,17 +70,15 @@ int main(int argc, char* argv[]) {
 	inicializacao();
 	//imprime(listaProcessos);
 
-	if (numEscalonamento == 1) {
-		qsort(listaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
-	}
-
+	qsort(listaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
+	
 	if (pthread_create(&escalonador, NULL, Escalonador, (void *) NULL)) {
         printf("\n ERROR creating thread Escalonador\n");
         exit(1);
     }
 
 	for (i = 0; i < nProcs; i++) {
-		while (tempoDesdeInicio(inicio) < listaProcessos[i].t0) sleep(1);
+		while (tempoDesdeInicio(inicio) < listaProcessos[i].t0) usleep(50000);
 		
 		/* thread raiz */
 		sem_wait(&emptyBuf);
@@ -111,30 +111,6 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-void inicializacao() {
-	long i;
-	for (i = 0; i < NMAX_PROCS; i++) 
-		buffer[i] = NULL;
-
-	if (sem_init(&semCore, 0, 1)) {
-		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
-		exit(0);
-	}
-	if (sem_init(&emptyBuf, 0, nProcs)) {
-		fprintf(stderr, "ERRO ao criar semaforo emptyBuf\n");
-		exit(0);
-	}
-	if (sem_init(&fullBuf, 0, 0)) {
-		fprintf(stderr, "ERRO ao criar semaforo fullBuf\n");
-		exit(0);
-	}
-	for (i = 0; i < NMAX_PROCS; i++) {
-		if (sem_init(&semThread[i], 0, 0)) {
-			fprintf(stderr, "ERRO ao criar semaforo semThread[%ld]\n", i);
-			exit(0);
-		}
-	}
-}
 
 /****************************** THREADS ******************************/
 
@@ -142,20 +118,26 @@ void inicializacao() {
 void *Processo(void *a) {
 	struct timeval inicioProcesso;
 	PROCESS* val = (PROCESS*) a;
-	int cont = 0;
+	int cont = 0, tmp1 = 1, tmp2 = 1;
 	//printf("val->id = %d\n", val->id);
 	sem_wait(&semThread[val->id]);
 	sem_wait(&semCore);
 	
 	gettimeofday(&inicioProcesso, NULL);
-	printf("Entering the thread: %s\n", val->nome);
+	//printf("Entering the thread: %s\n", val->nome);
 
-	while (tempoDesdeInicio(inicioProcesso) < val->dt) {
+	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < val->dt)) 
+		&& (tmp2 = (tempoDesdeInicio(inicio) < val->deadline))) {
+		if(cont < 3)
+			printf("[Operação] %s : %d\n", val->nome, cont);
 		cont++;
-		if(cont == 1)
-			printf("%s : %d\n", val->nome, cont);
 	}
 	
+	if (!tmp1 && tmp2)
+		printf("Sai por causa do dt.\n\n");
+	else if (tmp1 && !tmp2)
+		printf("Sai por culpa do deadline.\n\n");
+
 	sem_post(&semCore);
 
 	return NULL;
@@ -178,7 +160,23 @@ void *Escalonador(void *a) {
 			sem_post(&semThread[getNextQueue().id]);
 			removeQueue();
 			deadProc++;
-		}
+		} 
+	}
+
+	else if (numEscalonamento == 2) {
+		while (deadProc < nProcs) {
+			sem_wait(&fullBuf);
+			PROCESS* proc = buffer[front];
+			buffer[front] = NULL;
+			front = (front+1) % nProcs;
+			sem_post(&emptyBuf);
+			insertOrderedByJobQueue(*proc);
+			printQueue();
+			//sem_wait(&semCore);
+			sem_post(&semThread[getNextQueue().id]);
+			removeQueue();
+			deadProc++;
+		}	
 	}
 	
 	return NULL;
@@ -214,7 +212,7 @@ void parserArgumentosEntrada(int argc, char* argv[]){
 		printf("Escalonador: %s\n", argv[1]);
 		printf("Arquivo de entrada: %s\n", argv[2]);
 		printf("Arquivo de saida: %s\n", argv[3]);
-		printf("# cores: %d\n", nCores);
+		printf("# cores: %d\n\n", nCores);
 
 		if(argc >= 5 && argv[4][0] == 'd' && argv[4][1] == '\0') {
 			debug = 1;
@@ -227,6 +225,30 @@ void parserArgumentosEntrada(int argc, char* argv[]){
 	}
 }
 
+void inicializacao() {
+	long i;
+	for (i = 0; i < NMAX_PROCS; i++) 
+		buffer[i] = NULL;
+
+	if (sem_init(&semCore, 0, 1)) {
+		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
+		exit(0);
+	}
+	if (sem_init(&emptyBuf, 0, nProcs)) {
+		fprintf(stderr, "ERRO ao criar semaforo emptyBuf\n");
+		exit(0);
+	}
+	if (sem_init(&fullBuf, 0, 0)) {
+		fprintf(stderr, "ERRO ao criar semaforo fullBuf\n");
+		exit(0);
+	}
+	for (i = 0; i < NMAX_PROCS; i++) {
+		if (sem_init(&semThread[i], 0, 0)) {
+			fprintf(stderr, "ERRO ao criar semaforo semThread[%ld]\n", i);
+			exit(0);
+		}
+	}
+}
 
 /************************** FUNÇÕES DE FILA *****************************/
 
@@ -242,6 +264,35 @@ void insertOrderedByArrivedQueue(PROCESS proc) {
 	novo->next = head;
 	tail->next = novo;
 	tail = novo;
+}
+ 
+void insertOrderedByJobQueue(PROCESS proc) {
+	Node* aux;
+	Node* novo = (Node*) mallocSeguro(sizeof(Node));
+	novo->proc = proc;
+
+	for (aux = head; aux != tail; aux = aux->next) {
+		if (proc.dt < aux->next->proc.dt) {
+			novo->next = aux->next;
+			aux->next = novo;
+			break;
+		}
+	}
+	if (aux == tail) {
+		novo->next = head;
+		aux->next = novo;
+		tail = novo; 
+	}
+}
+
+void printQueue() {
+	Node* aux;
+
+	printf("Fila:  ");
+	for (aux = head->next; aux != head; aux = aux->next) {
+		printf("%s   ", aux->proc.nome);
+	}
+	printf("\n");
 }
 
 void removeQueue() {
