@@ -23,6 +23,7 @@ int numEscalonamento, nCores = 0, debug = 0, nProcs = 0;
 FILE* arqEntrada, *arqSaida;
 Node *head, *tail;
 struct timeval inicio;
+float quantum = 0.5;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue; 
@@ -42,16 +43,17 @@ void inicializacao();
 void initQueue();
 void insertOrderedByArrivedQueue(PROCESS proc);
 void insertOrderedByJobQueue(PROCESS proc);
-void removeQueue();
 void printQueue();
 int emptyQueue();
-PROCESS getNextQueue();
-
+Node* getNextQueue(Node* p);
+void removeNextQueue(Node *p);
+void decreaseQuantumNextQueue(Node* p);
 
 /*** THREADS DO SIMULADOR ***/
-	
 void *Processo(void *a);
 void *Escalonador(void *a);
+void FCFS_SJF(PROCESS *val);
+void roundRobin(PROCESS *val);
 
 /*******************************************************/
 
@@ -68,6 +70,7 @@ int main(int argc, char* argv[]) {
 	parserArgumentosEntrada(argc, argv);
 	leArquivoEntrada(listaProcessos);
 	inicializacao();
+	initQueue();
 	//imprime(listaProcessos);
 
 	qsort(listaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
@@ -119,11 +122,52 @@ int main(int argc, char* argv[]) {
 
 // TODO:
 void *Processo(void *a) {
-	struct timeval inicioProcesso;
 	PROCESS* val = (PROCESS*) a;
-	int cont = 0, tmp1 = 1, tmp2 = 1;
-	sem_wait(&semThread[val->id]);
+
+	if(numEscalonamento == 1 || numEscalonamento == 2) {
+		FCFS_SJF(val);
+	}
+
+	if(numEscalonamento == 4){
+		roundRobin(val);
+	}
+
+	return NULL;
+}
+
+void roundRobin(PROCESS *val){
+	struct timeval inicioProcesso;
+	float quantumThread = quantum;
+	int cont = 0;
 	
+	while (tempoDesdeInicio(inicio) < val->deadline && val->dt > 0) {
+
+		if(val->dt < quantum) quantumThread = val->dt; 
+		
+		sem_wait(&semThread[val->id]);	
+		gettimeofday(&inicioProcesso, NULL);
+
+		while((tempoDesdeInicio(inicio) < val->deadline) &&
+			(tempoDesdeInicio(inicioProcesso) < quantumThread)){
+
+			if(cont < 3)
+				printf("[Operação] %s : %d\n", val->nome, cont);
+			cont++;
+		}
+
+		sem_post(&semCore);
+
+		val->dt -= quantumThread;	
+	}
+	
+
+}
+
+void FCFS_SJF(PROCESS *val){
+	struct timeval inicioProcesso;
+	int cont = 0, tmp1 = 1, tmp2 = 1;
+	
+	sem_wait(&semThread[val->id]);	
 	gettimeofday(&inicioProcesso, NULL);
 
 	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < val->dt)) 
@@ -134,40 +178,38 @@ void *Processo(void *a) {
 	}
 	
 	if (!tmp1 && tmp2)
-		printf("Sai por causa do dt.\n\n");
+		printf("Sai por causa do dt: %s\n\n", val->nome);
 	else if (tmp1 && !tmp2)
-		printf("Sai por culpa do deadline.\n\n");
+		printf("Sai por culpa do deadline: %s\n\n", val->nome);
 
 	sem_post(&semCore);
-
-	return NULL;
 }
 
 // TODO:
 void *Escalonador(void *a) {
 	int deadProc = 0, front = 0;
-	initQueue();
 
-	if (numEscalonamento == 1) {
+	if (numEscalonamento == 1 || numEscalonamento == 2) {
 		while (deadProc < nProcs) {
 			sem_wait(&semQueue);
 			
 			sem_wait(&semCore);
-			sem_post(&semThread[getNextQueue().id]);
-			removeQueue();
+			sem_post(&semThread[getNextQueue(head)->proc.id]);
+			removeNextQueue(head);
 			deadProc++;
 		} 
 	}
 
-	else if (numEscalonamento == 2) {
+	else if (numEscalonamento == 4) {
+		Node *p = head;
+
 		while (deadProc < nProcs) {
 			sem_wait(&semQueue);
 	
-			// printQueue();
 			sem_wait(&semCore);
-			sem_post(&semThread[getNextQueue().id]);
-			removeQueue();
-			deadProc++;
+			sem_post(&semThread[getNextQueue(p)->proc.id]);
+			decreaseQuantumNextQueue(p);
+			p = getNextQueue(p);
 		}	
 	}
 	
@@ -175,6 +217,14 @@ void *Escalonador(void *a) {
 }
 
 /************************** FUNÇÕES AUXILIARES *******************************/
+
+void decreaseQuantumNextQueue(Node* p){
+	getNextQueue(p)->proc.dt -= quantum;
+
+	if(getNextQueue(p)->proc.dt <= 0){
+		removeNextQueue(p);
+	}
+}
 
 void leArquivoEntrada(PROCESS listaProcessos[]){
 	int i = 0;
@@ -283,14 +333,14 @@ void printQueue() {
 	printf("\n");
 }
 
-void removeQueue() {
+void removeNextQueue(Node *p) {
 	if(!emptyQueue()) {
-		Node* aux = head->next;
-		head->next = aux->next;
+		Node* aux = p->next;
+		p->next = aux->next;
 		aux->next = NULL;
 		free(aux);
 		if (emptyQueue()) {
-			tail = head;
+			tail = p;
 		}
 	}
 }
@@ -300,8 +350,12 @@ int emptyQueue() {
 }
 
 // A fila não pode estar vazia para chamar a função
-PROCESS getNextQueue() {
-	return head->next->proc;
+Node* getNextQueue(Node* p) {
+	if(p->next == head) {
+		p = head;
+	}
+
+	return p->next;
 }
 
 /************************ FUNÇÕES DE PROPÓSITO GERAL *********************/
