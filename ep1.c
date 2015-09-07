@@ -19,7 +19,6 @@ typedef struct no {
 
 
 /********************** VARIAVEIS GLOBAIS ****************************/
-struct timeval inicio, fim;
 int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
 FILE* arqEntrada, *arqSaida;
 Node *head, *tail;
@@ -33,7 +32,7 @@ PROCESS* buffer[NMAX_PROCS];
 void parserArgumentosEntrada(int argc, char* argv[]);
 void leArquivoEntrada(PROCESS listaProcessos[]);
 int compare_arrive(const void *a,const void *b);
-float tempoDesdeInicio();
+float tempoDesdeInicio(struct timeval inicio);
 void imprime(PROCESS listaProcessos[]);
 void* mallocSeguro(size_t bytes);
 void inicializacao();
@@ -47,12 +46,14 @@ PROCESS getNextQueue();
 
 
 /*** THREADS DO SIMULADOR ***/
+	
 void *Processo(void *a);
 void *Escalonador(void *a);
 
 /*******************************************************/
 
 int main(int argc, char* argv[]) {
+	struct timeval inicio;
 	gettimeofday(&inicio, NULL);
 	
 	PROCESS listaProcessos[NMAX_PROCS];
@@ -65,10 +66,10 @@ int main(int argc, char* argv[]) {
 	parserArgumentosEntrada(argc, argv);
 	leArquivoEntrada(listaProcessos);
 	inicializacao();
-	imprime(listaProcessos);
+	//imprime(listaProcessos);
 
 	if (numEscalonamento == 1) {
-		qsort(listaProcessos, NMAX_PROCS, sizeof(PROCESS), compare_arrive);
+		qsort(listaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
 	}
 
 	if (pthread_create(&escalonador, NULL, Escalonador, (void *) NULL)) {
@@ -77,7 +78,7 @@ int main(int argc, char* argv[]) {
     }
 
 	for (i = 0; i < nProcs; i++) {
-		while (tempoDesdeInicio() < listaProcessos[i].t0) sleep(1);
+		while (tempoDesdeInicio(inicio) < listaProcessos[i].t0) sleep(1);
 		
 		/* thread raiz */
 		sem_wait(&emptyBuf);
@@ -85,6 +86,7 @@ int main(int argc, char* argv[]) {
 		rear = (rear+1) % nProcs;
 		sem_post(&fullBuf);
 
+		//printf("OLa sou a thread: %s\n", listaProcessos[i].nome);
 		if (pthread_create(&procs[i], NULL, Processo, (void *) &listaProcessos[i])) {
             printf("\n ERROR creating thread procs[%ld]\n", i);
             exit(1);
@@ -114,7 +116,7 @@ void inicializacao() {
 	for (i = 0; i < NMAX_PROCS; i++) 
 		buffer[i] = NULL;
 
-	if (sem_init(&semCore, 0, nCores)) {
+	if (sem_init(&semCore, 0, 1)) {
 		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
 		exit(0);
 	}
@@ -138,14 +140,20 @@ void inicializacao() {
 
 // TODO:
 void *Processo(void *a) {
+	struct timeval inicioProcesso;
 	PROCESS* val = (PROCESS*) a;
-
-	printf("val->id = %d\n", val->id);
+	int cont = 0;
+	//printf("val->id = %d\n", val->id);
 	sem_wait(&semThread[val->id]);
 	sem_wait(&semCore);
 	
-	while ((tempoDesdeInicio() - val->t0) < val->dt) {
-		printf("[Ola sou o processo:  %s]\n", val->nome);
+	gettimeofday(&inicioProcesso, NULL);
+	printf("Entering the thread: %s\n", val->nome);
+
+	while (tempoDesdeInicio(inicioProcesso) < val->dt) {
+		cont++;
+		if(cont == 1)
+			printf("%s : %d\n", val->nome, cont);
 	}
 	
 	sem_post(&semCore);
@@ -168,6 +176,7 @@ void *Escalonador(void *a) {
 			insertOrderedByArrivedQueue(*proc);
 			//sem_wait(&semCore);
 			sem_post(&semThread[getNextQueue().id]);
+			removeQueue();
 			deadProc++;
 		}
 	}
@@ -268,7 +277,8 @@ int compare_arrive(const void *a,const void *b) {
 	return 0;
 }
 
-float tempoDesdeInicio(){
+float tempoDesdeInicio(struct timeval inicio){
+	struct timeval fim;
 	float timedif;
 
 	gettimeofday(&fim, NULL);
