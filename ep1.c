@@ -25,7 +25,7 @@ Node *head, *tail;
 struct timeval inicio;
 
 sem_t semCore, semThread[NMAX_PROCS];
-sem_t emptyBuf, fullBuf; 
+sem_t semQueue; 
 
 PROCESS* buffer[NMAX_PROCS];
 
@@ -80,17 +80,20 @@ int main(int argc, char* argv[]) {
 	for (i = 0; i < nProcs; i++) {
 		while (tempoDesdeInicio(inicio) < listaProcessos[i].t0) usleep(50000);
 		
-		/* thread raiz */
-		sem_wait(&emptyBuf);
-		buffer[rear] = &listaProcessos[i];
-		rear = (rear+1) % nProcs;
-		sem_post(&fullBuf);
-
-		//printf("OLa sou a thread: %s\n", listaProcessos[i].nome);
 		if (pthread_create(&procs[i], NULL, Processo, (void *) &listaProcessos[i])) {
             printf("\n ERROR creating thread procs[%ld]\n", i);
             exit(1);
         }
+
+        if(numEscalonamento == 1){
+			insertOrderedByArrivedQueue(listaProcessos[i]);
+		}
+		else if(numEscalonamento == 2){
+			insertOrderedByJobQueue(listaProcessos[i]);
+		}
+
+		/* sinaliza que chegou um processo na fila */
+		sem_post(&semQueue);
 	}
 	
 	for (i = 0; i < nProcs; i++) {
@@ -107,7 +110,7 @@ int main(int argc, char* argv[]) {
 
 	fclose(arqEntrada);
 	fclose(arqSaida);
-	//printf("%f seg\n\n", tempoDesdeInicio());
+
 	return 0;
 }
 
@@ -119,12 +122,9 @@ void *Processo(void *a) {
 	struct timeval inicioProcesso;
 	PROCESS* val = (PROCESS*) a;
 	int cont = 0, tmp1 = 1, tmp2 = 1;
-	//printf("val->id = %d\n", val->id);
 	sem_wait(&semThread[val->id]);
-	sem_wait(&semCore);
 	
 	gettimeofday(&inicioProcesso, NULL);
-	//printf("Entering the thread: %s\n", val->nome);
 
 	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < val->dt)) 
 		&& (tmp2 = (tempoDesdeInicio(inicio) < val->deadline))) {
@@ -150,13 +150,9 @@ void *Escalonador(void *a) {
 
 	if (numEscalonamento == 1) {
 		while (deadProc < nProcs) {
-			sem_wait(&fullBuf);
-			PROCESS* proc = buffer[front];
-			buffer[front] = NULL;
-			front = (front+1) % nProcs;
-			sem_post(&emptyBuf);
-			insertOrderedByArrivedQueue(*proc);
-			//sem_wait(&semCore);
+			sem_wait(&semQueue);
+			
+			sem_wait(&semCore);
 			sem_post(&semThread[getNextQueue().id]);
 			removeQueue();
 			deadProc++;
@@ -165,14 +161,10 @@ void *Escalonador(void *a) {
 
 	else if (numEscalonamento == 2) {
 		while (deadProc < nProcs) {
-			sem_wait(&fullBuf);
-			PROCESS* proc = buffer[front];
-			buffer[front] = NULL;
-			front = (front+1) % nProcs;
-			sem_post(&emptyBuf);
-			insertOrderedByJobQueue(*proc);
-			printQueue();
-			//sem_wait(&semCore);
+			sem_wait(&semQueue);
+	
+			// printQueue();
+			sem_wait(&semCore);
 			sem_post(&semThread[getNextQueue().id]);
 			removeQueue();
 			deadProc++;
@@ -234,12 +226,8 @@ void inicializacao() {
 		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
 		exit(0);
 	}
-	if (sem_init(&emptyBuf, 0, nProcs)) {
-		fprintf(stderr, "ERRO ao criar semaforo emptyBuf\n");
-		exit(0);
-	}
-	if (sem_init(&fullBuf, 0, 0)) {
-		fprintf(stderr, "ERRO ao criar semaforo fullBuf\n");
+	if (sem_init(&semQueue, 0, 0)) {
+		fprintf(stderr, "ERRO ao criar semaforo semQueue\n");
 		exit(0);
 	}
 	for (i = 0; i < NMAX_PROCS; i++) {
