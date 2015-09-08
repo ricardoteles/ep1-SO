@@ -21,7 +21,7 @@ typedef struct node {
 
 
 /********************** VARIAVEIS GLOBAIS ****************************/
-int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
+int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, mudancaContexto = 0; 
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
 struct timeval inicio;
@@ -115,6 +115,8 @@ int main(int argc, char* argv[]) {
 		exit(1);
     }
 
+    fprintf(arqSaida, "%d", mudancaContexto);
+
 	fclose(arqEntrada);
 	fclose(arqSaida);
 
@@ -190,24 +192,20 @@ void roundRobin(int id){
 
 void FCFS_SJF(int id){
 	struct timeval inicioProcesso;
-	int tmp1 = 1, tmp2 = 1;
 	int cont = 0;
 	
 	sem_wait(&semThread[id]);	
 	gettimeofday(&inicioProcesso, NULL);
 
-	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt)) 
-		&& (tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline))) {
+	while ((tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
+		&& (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) {
 			Operacao(id, cont);
 			cont++;
 	}
 	
-	if (!tmp1 && tmp2)
-		printf("Sai por causa do dt: %s\n\n", tabelaProcessos[id].nome);
-	else if (tmp1 && !tmp2)
-		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
-
 	sem_post(&semCore);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), tempoDesdeInicio(inicioProcesso));
 }
 
 void Operacao(int id, int cont) {

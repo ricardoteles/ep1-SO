@@ -1,0 +1,64 @@
+										LEAIME
+==========================================================================================================
+
+Ambos os programas abaixo compilam e executam na distribuição Debian.
+
+/*****************************************/
+/*    Como compilar e executar o ep1 ?   */
+/*****************************************/
+
+1) Para compilar e excutar o ep1(simulador de processos) basta abrir o terminal e digitar:
+
+$ make 
+$ ./ep1
+
+
+2) Depois disso, aparecerá o formato esperado para o ep, conforme abaixo:
+
+Formato esperado:
+./ep1 <num_escalonador (1-6)> <arq_entrada> <arq_saida> [d]
+
+Onde:
+
+-> num_escalonador: é um número de 1 a 6 que representa um dos escalonadores abaixo:
+		1. First-Come First-Served
+		2. Shortest Job First
+		3. Shortest Remaining Time Next
+		4. Round-Robin
+		5. Escalonamento com prioridade
+		6. Escalonamento em tempo real com deadlines rígidos
+
+-> arq_entrada: é um arquivo de entrada
+
+-> arq_saida: é um arquivo de saída
+
+-> d: é o parâmetro de debug (opcional)
+
+
+/*******************************************/
+/*    Como compilar e executar o ep1sh ?   */
+/*******************************************/
+
+
+1) Para compilar o ep1sh é necessário ter o pacote "libreadline-dev"(no Debian) instalado, já que o programa usa as funcionalidades das bibliotecas GNU readline e GNU history. Mais informações podem ser vistas na documentacão da biblioteca em ftp://ftp.gnu.org/pub/gnu/readline/
+
+
+2) Com a instalação feita, basta abrir o terminal e digitar:
+
+$ make 
+$ ./ep1sh
+
+
+3) Depois disso abrirá o SHELL EP1. Esse shell aceita os seguintes comandos (sem as aspas):
+
+-> "/bin/ls -1": lista na vertical os arquivos e diretórios do diretório corrente
+
+-> "./ep1 <argumentos do EP1>": Executa o ep1, comentado anteriormente, com os seus devidos argumentos
+
+-> "cd <novo diretório para mudar>": muda para o diretório especificado (e válido)
+
+-> "pwd": imprime o nome do diretório corrente
+
+-> "exit": fecha o SHELL EP1
+
+==========================================================================================================

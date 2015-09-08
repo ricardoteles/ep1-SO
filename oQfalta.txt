@@ -1,0 +1,29 @@
+O que falta fazer?
+
+EP1.c
+=====
+
+- Shortest Remaining Time Next
+- Round-Robin
+- gerar o arquivo de saida
+- fazer a opcao d (debug)
+- testar mais vezes para outros casos
+- verificar a compilação com warnings
+
+EP1SH.c
+=======
+
+- verificar a validação dos comandos do shell
+
+APRESENTAÇÃO
+============
+
+- gerar os graficos
+
+/****************** FEITO ******************/ 
+
+LEIAME
+======
+
+- escrever o que precisa fazer para compilar e rodar o codigo
+- listar todas as dependencias de compilação e execução
