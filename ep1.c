@@ -25,7 +25,7 @@ int numEscalonamento, nCores = 0, debug = 0, nProcs = 0;
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
 struct timeval inicio;
-float quantum = 0.5;
+float quantum = 1.0;
 Link head, tail;
 
 sem_t semCore, semThread[NMAX_PROCS];
@@ -50,12 +50,13 @@ void removeNextQueue(Link p);
 int emptyQueue();
 void printQueue();
 Link getNextQueue(Link p);
-void decreaseQuantumNextQueue(Link p);
+void decreaseQuantumNextQueue(Link p, int *deadProc);
 /*************  THREADS ******************/
 void *Processo(void *a);
 void *Escalonador(void *a);
+void roundRobin(int id);
 void FCFS_SJF(int id);
-
+void Operacao(int id, int cont);
 /*====================================== MAIN ==================================================*/
 
 int main(int argc, char* argv[]) {
@@ -91,7 +92,7 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
 
-        if(numEscalonamento == 1){
+        if(numEscalonamento == 1 || numEscalonamento == 4){
 			insertOrderedByArrivedQueue(i);
 		}
 		else if(numEscalonamento == 2){
@@ -129,12 +130,14 @@ void *Processo(void *a) {
 	if(numEscalonamento == 1 || numEscalonamento == 2) {
 		FCFS_SJF(*id);
 	}
-
+	else if(numEscalonamento == 4) {
+		roundRobin(*id);
+	}
 	return NULL;
 }
 
 void *Escalonador(void *a) {
-	int deadProc = 0, front = 0;
+	int deadProc = 0;
 
 	if (numEscalonamento == 1 || numEscalonamento == 2) {
 		while (deadProc < nProcs) {
@@ -146,22 +149,57 @@ void *Escalonador(void *a) {
 			deadProc++;
 		} 
 	}
-	
+
+	else if (numEscalonamento == 4) {
+		Link p = head;
+
+		while (deadProc < nProcs) {
+			sem_wait(&semQueue);
+		
+			sem_wait(&semCore);
+					
+			decreaseQuantumNextQueue(p, &deadProc);
+			
+			p = getNextQueue(p);
+		} 
+	}
 	return NULL;
+}
+
+void roundRobin(int id){
+	int cont;
+	struct timeval inicioProcesso;
+	
+	while(tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
+		tabelaProcessos[id].dt > 0){
+			sem_wait(&semThread[id]);	
+		
+			cont = 0;
+			gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
+													// eh escalonado
+			while ((tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) &&
+				(tempoDesdeInicio(inicioProcesso) < quantum)) {
+					Operacao(id, cont);
+					cont++;					
+			}
+			printf("\n");
+			sem_post(&semCore);
+	}
+
 }
 
 void FCFS_SJF(int id){
 	struct timeval inicioProcesso;
-	int cont = 0, tmp1 = 1, tmp2 = 1;
+	int tmp1 = 1, tmp2 = 1;
+	int cont = 0;
 	
 	sem_wait(&semThread[id]);	
 	gettimeofday(&inicioProcesso, NULL);
 
 	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt)) 
 		&& (tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline))) {
-		if(cont < 3)
-			printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
-		cont++;
+			Operacao(id, cont);
+			cont++;
 	}
 	
 	if (!tmp1 && tmp2)
@@ -170,6 +208,12 @@ void FCFS_SJF(int id){
 		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
 
 	sem_post(&semCore);
+}
+
+void Operacao(int id, int cont) {
+	if(cont < 3) {
+		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
+	}
 }
 /************* INICIALIZACAO ******************/
 void leArquivoEntrada() {
@@ -314,13 +358,15 @@ void insertOrderedByJobQueue(int id) {
 
 void removeNextQueue(Link p) {
 	if(!emptyQueue()) {
-		Link aux = p->next;
+		Link aux = getNextQueue(p);
+		
+		if (aux == tail) {
+			tail = p;
+		}
+
 		p->next = aux->next;
 		aux->next = NULL;
 		free(aux);
-		if (emptyQueue()) {
-			tail = p;
-		}
 	}
 }
 
@@ -338,6 +384,20 @@ void printQueue() {
 	printf("\n");
 }
 
+void decreaseQuantumNextQueue(Node* p, int *deadProc) {
+	tabelaProcessos[getNextQueue(p)->id].dt -= quantum;
+
+	sem_post(&semThread[getNextQueue(p)->id]);
+
+	if(tabelaProcessos[getNextQueue(p)->id].dt <= 0){
+		removeNextQueue(p);
+		(*deadProc)++;		//contabiliza qtos processos executaram
+	}
+	else{
+		sem_post(&semQueue);
+	}
+}
+
 // A fila não pode estar vazia para chamar a função
 Link getNextQueue(Link p) {
 	if(p->next == head) {
@@ -345,12 +405,4 @@ Link getNextQueue(Link p) {
 	}
 
 	return p->next;
-}
-
-void decreaseQuantumNextQueue(Node* p) {
-	tabelaProcessos[getNextQueue(p)->id].dt -= quantum;
-
-	if(tabelaProcessos[getNextQueue(p)->id].dt <= 0){
-		removeNextQueue(p);
-	}
 }
