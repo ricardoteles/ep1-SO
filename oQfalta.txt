@@ -1,21 +1,19 @@
-1,2,1,2,3,1,3,1,3
-
 O que falta fazer?
 
 EP1.c
 =====
 
-- Shortest Remaining Time Next						(OK)
-- Round-Robin 										(OK)
-- Escalonamento com prioridade
+- Shortest Remaining Time Next							(OK)
+- Round-Robin 											(OK)
+- Escalonamento com prioridade						
 - deadlines rígidos
-- extender para varios cores os testes
+- extender para varios cores os testes										
 
-- gerar o arquivo de saida
-- verificar a compilação com warnings
-- separar em arquivos .h
+- gerar o arquivo de saida 							    RICARDO
+- definir o quantum e o usleep melhor					FABIO
+- verificar a compilação com warnings					FABIO
+- separar em arquivos .h								FABIO
 - fazer a opcao d (debug)
-- definir o quantum melhor
 
 EP1SH.c
 =======
@@ -25,8 +23,8 @@ EP1SH.c
 APRESENTAÇÃO
 ============
 
-- testar mais vezes para outros casos
-- gerar os graficos
+- testar mais vezes para outros casos					FABIO
+- gerar os graficos										RICARDO
 
 /***************** ERROS *********************/
 
