@@ -1,4 +1,4 @@
-1 processo5 2 30 2
-1 processo6 4 30 2
-1 processo2 3 30 2
-1 processo7 3 30 2
+1 processo1 2 20 2
+3 processo2 2 20 2
+1 processo3 2 20 2
+7 processo4 2 20 2

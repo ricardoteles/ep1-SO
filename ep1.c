@@ -7,7 +7,7 @@
 #define NMAX_PROCS 100
 
 typedef struct {
-	float t0, dt, deadline;
+	float t0, dt, deadline, tempoRodada;
 	char nome[50];
 	int p, id;
 } PROCESS;
@@ -21,7 +21,7 @@ typedef struct node {
 
 
 /********************** VARIAVEIS GLOBAIS ****************************/
-int numEscalonamento, nCores = 0, debug = 0, nProcs = 0; 
+int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, deadProc = 0;
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
 struct timeval inicio;
@@ -29,7 +29,7 @@ float quantum = 1.0;
 Link head, tail;
 
 sem_t semCore, semThread[NMAX_PROCS];
-sem_t semQueue; 
+sem_t semQueue, mutexQueue;
 
 /*=============================== ASSINATURA DAS FUNCOES =======================================*/
 
@@ -46,11 +46,13 @@ void imprimeSaida();
 void initQueue();
 void insertOrderedByArrivedQueue(int id);
 void insertOrderedByJobQueue(int id);
+void insertQueue(int id);
+int removeQueue();
 void removeNextQueue(Link p);
 int emptyQueue();
 void printQueue();
 Link getNextQueue(Link p);
-void decreaseQuantumNextQueue(Link p, int *deadProc);
+void decreaseQuantumNextQueue();
 /*************  THREADS ******************/
 void *Processo(void *a);
 void *Escalonador(void *a);
@@ -99,7 +101,7 @@ int main(int argc, char* argv[]) {
 			insertOrderedByJobQueue(i);
 		}
 
-		/* sinaliza que chegou um processo na fila */
+		/* sinaliza que chegou processo na fila */
 		sem_post(&semQueue);
 	}
 	
@@ -136,78 +138,60 @@ void *Processo(void *a) {
 	return NULL;
 }
 
-void *Escalonador(void *a) {
-	int deadProc = 0;
+void roundRobin(int id) {
+	
+	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
+		tabelaProcessos[id].dt > 0)
+	{
+		sem_wait(&semThread[id]);
+	
+		struct timeval inicioProcesso;
+		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
+												// eh escalonado
+		int cont = 0;
+		while ((tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) &&
+			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
+		{
+			Operacao(id, cont);
+			cont++;					
+		}
+		printf("\n");
+		sem_post(&semCore);
+	}
+}
 
+void *Escalonador(void *a) {
 	if (numEscalonamento == 1 || numEscalonamento == 2) {
 		while (deadProc < nProcs) {
 			sem_wait(&semQueue);
 			
 			sem_wait(&semCore);
-			sem_post(&semThread[getNextQueue(head)->id]);
+			
+			Link next = getNextQueue(head);
+			tabelaProcessos[next->id].tempoRodada =tabelaProcessos[next->id].dt;
+
+			sem_post(&semThread[next->id]);
+			
 			removeNextQueue(head);
+			
+			sem_post(&semQueue);
+
 			deadProc++;
 		} 
 	}
 
 	else if (numEscalonamento == 4) {
-		Link p = head;
 
 		while (deadProc < nProcs) {
+			//printf("deadProc = %d\n", deadProc);
 			sem_wait(&semQueue);
 		
 			sem_wait(&semCore);
-					
-			decreaseQuantumNextQueue(p, &deadProc);
 			
-			p = getNextQueue(p);
+			decreaseQuantumNextQueue();
 		} 
 	}
 	return NULL;
-}
-
-void roundRobin(int id){
-	int cont;
-	struct timeval inicioProcesso;
-	
-	while(tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
-		tabelaProcessos[id].dt > 0){
-			sem_wait(&semThread[id]);	
-		
-			cont = 0;
-			gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
-													// eh escalonado
-			while ((tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) &&
-				(tempoDesdeInicio(inicioProcesso) < quantum)) {
-					Operacao(id, cont);
-					cont++;					
-			}
-			printf("\n");
-			sem_post(&semCore);
-	}
-
-}
-
-void FCFS_SJF(int id){
-	struct timeval inicioProcesso;
-	int tmp1 = 1, tmp2 = 1;
-	int cont = 0;
-	
-	sem_wait(&semThread[id]);	
-	gettimeofday(&inicioProcesso, NULL);
-
-	while ((tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt)) 
-		&& (tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline))) {
-			Operacao(id, cont);
-			cont++;
-	}
-	
-	if (!tmp1 && tmp2)
-		printf("Sai por causa do dt: %s\n\n", tabelaProcessos[id].nome);
-	else if (tmp1 && !tmp2)
-		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
-
-	sem_post(&semCore);
 }
 
 void Operacao(int id, int cont) {
@@ -215,6 +199,148 @@ void Operacao(int id, int cont) {
 		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
 	}
 }
+
+/************************** QUEUE *****************************/
+void decreaseQuantumNextQueue() {
+	int id = removeQueue(); 
+	
+	// fila não está vazia
+	if (id != -1) { 
+		// definimos tempo do run da proxima rodada
+		if (tabelaProcessos[id].dt >= quantum) {
+			tabelaProcessos[id].tempoRodada = quantum;	
+		} 
+		else {
+			tabelaProcessos[id].tempoRodada = tabelaProcessos[id].dt;
+		}
+		
+		tabelaProcessos[id].dt -= tabelaProcessos[id].tempoRodada; // processo ainda vai rodar
+		
+		if (tabelaProcessos[id].dt > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
+			insertQueue(id);   // processo continua pra proxima rodada
+			sem_post(&semQueue);
+		}
+		else {
+			// deixa o processo removido e contabiliza qtos processos terminaram
+			sem_wait(&mutexQueue);
+			deadProc++;
+			sem_post(&mutexQueue);
+		}
+		
+		sem_post(&semThread[id]); // sinaliza o próximo processo da fila
+	}
+}
+
+void removeNextQueue(Link p) {
+	sem_wait(&mutexQueue);
+
+	if(head->next != head) {
+		Link aux = p->next;
+
+		if (aux == tail) {
+			tail = p;
+		}
+
+		p->next = aux->next;
+		aux->next = NULL;
+		free(aux);
+	}
+
+	sem_post(&mutexQueue);
+}
+
+void initQueue() {
+	head = (Link) mallocSeguro(sizeof(Node));
+	head->next = head;
+	tail = head;
+}
+
+int removeQueue() {
+	int content = -1;
+	
+	sem_wait(&mutexQueue);
+		
+	if (head->next != head) {
+		Link nextHead = head->next;
+		content = nextHead->id;
+		head->next = nextHead->next;
+		nextHead->next = NULL;
+		free(nextHead);
+	}
+	
+	sem_post(&mutexQueue);
+	
+	return content;
+}
+
+void insertQueue(int id) {
+	insertOrderedByArrivedQueue(id);
+}
+
+void insertOrderedByArrivedQueue(int id) {
+	Link novo = (Link) mallocSeguro(sizeof(Node));
+	novo->id = id;
+	sem_wait(&mutexQueue);
+	novo->next = head;
+	tail->next = novo;
+	tail = novo;
+	sem_post(&mutexQueue);
+}
+
+void insertOrderedByJobQueue(int id) {
+	Link aux;
+	Link novo = (Link) mallocSeguro(sizeof(Node));
+	novo->id = id;
+
+	sem_wait(&mutexQueue);
+	
+	for (aux = head; aux != tail; aux = aux->next) {
+		if (tabelaProcessos[id].dt < tabelaProcessos[aux->next->id].dt) {
+			novo->next = aux->next;
+			aux->next = novo;
+			break;
+		}
+	}
+	if (aux == tail) {
+		novo->next = head;
+		aux->next = novo;
+		tail = novo; 
+	}
+
+	sem_post(&mutexQueue);
+}
+
+int emptyQueue() {
+	sem_wait(&mutexQueue);
+	int condition = (head->next == head); 
+	sem_post(&mutexQueue);
+	
+	return condition;
+}
+
+void printQueue() {
+	Link aux;
+
+	printf("Fila:  ");
+	sem_wait(&mutexQueue);
+	
+	for (aux = head->next; aux != tail; aux = aux->next) {
+		printf("%s   ", tabelaProcessos[aux->id].nome);
+	}
+	printf("%s\n", tabelaProcessos[tail->id].nome);
+
+	sem_post(&mutexQueue);
+}
+
+// A fila não pode estar vazia para chamar a função
+Link getNextQueue(Link p) {
+	sem_wait(&mutexQueue);
+	Link next = p->next; 
+	sem_post(&mutexQueue);
+	
+	return next;
+}
+
 /************* INICIALIZACAO ******************/
 void leArquivoEntrada() {
 	int i = 0;
@@ -270,6 +396,11 @@ void inicializacao() {
 		exit(0);
 	}
 
+	if (sem_init(&mutexQueue, 0, 1)) {
+		fprintf(stderr, "ERRO ao criar semaforo mutexQueue\n");
+		exit(0);
+	}
+
 	for (i = 0; i < NMAX_PROCS; i++) {
 		if (sem_init(&semThread[i], 0, 0)) {
 			fprintf(stderr, "ERRO ao criar semaforo semThread[%ld]\n", i);
@@ -322,87 +453,25 @@ void imprimeSaida() {
 	}
 }
 
-/************************** QUEUE *****************************/
-void initQueue() {
-	head = (Link) mallocSeguro(sizeof(Node));
-	head->next = head;
-	tail = head;
-}
+void FCFS_SJF(int id){
+	struct timeval inicioProcesso;
+	int tmp1 = 1, tmp2 = 1;
+	int cont = 0;
+	
+	sem_wait(&semThread[id]);	
+	gettimeofday(&inicioProcesso, NULL);
 
-void insertOrderedByArrivedQueue(int id) {
-	Link novo = (Link) mallocSeguro(sizeof(Node));
-	novo->id = id;
-	novo->next = head;
-	tail->next = novo;
-	tail = novo;
-}
-
-void insertOrderedByJobQueue(int id) {
-	Link aux;
-	Link novo = (Link) mallocSeguro(sizeof(Node));
-	novo->id = id;
-
-	for (aux = head; aux != tail; aux = aux->next) {
-		if (tabelaProcessos[id].dt < tabelaProcessos[aux->next->id].dt) {
-			novo->next = aux->next;
-			aux->next = novo;
-			break;
-		}
+	while ((tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) &&
+		(tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) ) 
+	{
+			Operacao(id, cont);
+			cont++;
 	}
-	if (aux == tail) {
-		novo->next = head;
-		aux->next = novo;
-		tail = novo; 
-	}
-}
+	
+	if (!tmp1 && tmp2)
+		printf("Sai por causa do dt: %s\n\n", tabelaProcessos[id].nome);
+	else if (tmp1 && !tmp2)
+		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
 
-void removeNextQueue(Link p) {
-	if(!emptyQueue()) {
-		Link aux = getNextQueue(p);
-		
-		if (aux == tail) {
-			tail = p;
-		}
-
-		p->next = aux->next;
-		aux->next = NULL;
-		free(aux);
-	}
-}
-
-int emptyQueue() {
-	return (head->next == head);
-}
-
-void printQueue() {
-	Link aux;
-
-	printf("Fila:  ");
-	for (aux = head->next; aux != head; aux = aux->next) {
-		printf("%s   ", tabelaProcessos[aux->id].nome);
-	}
-	printf("\n");
-}
-
-void decreaseQuantumNextQueue(Node* p, int *deadProc) {
-	tabelaProcessos[getNextQueue(p)->id].dt -= quantum;
-
-	sem_post(&semThread[getNextQueue(p)->id]);
-
-	if(tabelaProcessos[getNextQueue(p)->id].dt <= 0){
-		removeNextQueue(p);
-		(*deadProc)++;		//contabiliza qtos processos executaram
-	}
-	else{
-		sem_post(&semQueue);
-	}
-}
-
-// A fila não pode estar vazia para chamar a função
-Link getNextQueue(Link p) {
-	if(p->next == head) {
-		p = head;
-	}
-
-	return p->next;
+	sem_post(&semCore);
 }
