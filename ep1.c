@@ -21,7 +21,7 @@ typedef struct node {
 
 
 /********************** VARIAVEIS GLOBAIS ****************************/
-int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, deadProc = 0;
+int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, deadProc = 0, mudancaContexto = 0; 
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
 struct timeval inicio;
@@ -53,6 +53,7 @@ int emptyQueue();
 void printQueue();
 Link getNextQueue(Link p);
 void decreaseQuantumNextQueue();
+int unitQueue();
 /*************  THREADS ******************/
 void *Processo(void *a);
 void *Escalonador(void *a);
@@ -117,6 +118,8 @@ int main(int argc, char* argv[]) {
 		exit(1);
     }
 
+    fprintf(arqSaida, "%d", mudancaContexto);
+
 	fclose(arqEntrada);
 	fclose(arqSaida);
 
@@ -126,6 +129,25 @@ int main(int argc, char* argv[]) {
 /*====================================== FUNCOES ==================================================*/
 
 /*************** THREADS **********************/
+void FCFS_SJF(int id) {
+	struct timeval inicioProcesso;
+	int cont = 0;
+	
+	sem_wait(&semThread[id]);	
+	gettimeofday(&inicioProcesso, NULL);
+
+	while ((tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
+		&& (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) {
+			Operacao(id, cont);
+			cont++;
+	}
+	
+	sem_post(&semCore);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicioProcesso));
+}
+
 void *Processo(void *a) {
 	int* id = (int*) a;
 
@@ -140,9 +162,7 @@ void *Processo(void *a) {
 
 void roundRobin(int id) {
 	
-	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
-		tabelaProcessos[id].dt > 0)
-	{
+	do {
 		sem_wait(&semThread[id]);
 	
 		struct timeval inicioProcesso;
@@ -157,7 +177,9 @@ void roundRobin(int id) {
 		}
 		printf("\n");
 		sem_post(&semCore);
-	}
+	
+	}	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
+		tabelaProcessos[id].dt > 0);
 }
 
 void *Escalonador(void *a) {
@@ -202,9 +224,11 @@ void Operacao(int id, int cont) {
 
 /************************** QUEUE *****************************/
 void decreaseQuantumNextQueue() {
-	int id = removeQueue(); 
+	int id;
+
+	id = removeQueue(); 
 	
-	// fila não está vazia
+	// fila não estava vazia
 	if (id != -1) { 
 		// definimos tempo do run da proxima rodada
 		if (tabelaProcessos[id].dt >= quantum) {
@@ -255,6 +279,13 @@ void initQueue() {
 	tail = head;
 }
 
+int unitQueue() {
+	sem_wait(&mutexQueue);
+	int condition = (head->next->next == head);
+	sem_post(&mutexQueue);
+	return condition;
+}
+
 int removeQueue() {
 	int content = -1;
 	
@@ -263,6 +294,11 @@ int removeQueue() {
 	if (head->next != head) {
 		Link nextHead = head->next;
 		content = nextHead->id;
+		
+		if (nextHead->next == head) {
+			tail = head;	
+		}
+
 		head->next = nextHead->next;
 		nextHead->next = NULL;
 		free(nextHead);
@@ -451,27 +487,4 @@ void imprimeSaida() {
 		// fprintf(arqSaida ,"p: %d\n\n", tabelaProcessos[i].p);
 		printf("id: %d\n", tabelaProcessos[i].id);
 	}
-}
-
-void FCFS_SJF(int id){
-	struct timeval inicioProcesso;
-	int tmp1 = 1, tmp2 = 1;
-	int cont = 0;
-	
-	sem_wait(&semThread[id]);	
-	gettimeofday(&inicioProcesso, NULL);
-
-	while ((tmp2 = (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) &&
-		(tmp1 = (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) ) 
-	{
-			Operacao(id, cont);
-			cont++;
-	}
-	
-	if (!tmp1 && tmp2)
-		printf("Sai por causa do dt: %s\n\n", tabelaProcessos[id].nome);
-	else if (tmp1 && !tmp2)
-		printf("Sai por culpa do deadline: %s\n\n", tabelaProcessos[id].nome);
-
-	sem_post(&semCore);
 }
