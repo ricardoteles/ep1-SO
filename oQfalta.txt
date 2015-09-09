@@ -3,13 +3,15 @@ O que falta fazer?
 EP1.c
 =====
 
-- Shortest Remaining Time Next
-- Round-Robin (OK)
+- Shortest Remaining Time Next						(OK)
+- Round-Robin 										(OK)
 - Escalonamento com prioridade
+- deadlines rígidos
+
 - gerar o arquivo de saida
-- fazer a opcao d (debug)
-- testar mais vezes para outros casos
 - verificar a compilação com warnings
+- separar em arquivos .h
+- fazer a opcao d (debug)
 
 EP1SH.c
 =======
@@ -19,6 +21,7 @@ EP1SH.c
 APRESENTAÇÃO
 ============
 
+- testar mais vezes para outros casos
 - gerar os graficos
 
 /***************** ERROS *********************/

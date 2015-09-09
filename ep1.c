@@ -22,6 +22,7 @@ typedef struct node {
 
 /********************** VARIAVEIS GLOBAIS ****************************/
 int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, deadProc = 0, mudancaContexto = 0; 
+int qtdadeChegaram = 0;
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
 struct timeval inicio;
@@ -30,6 +31,7 @@ Link head, tail;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue, mutexQueue;
+sem_t semTroca;
 
 /*=============================== ASSINATURA DAS FUNCOES =======================================*/
 
@@ -59,6 +61,7 @@ void *Processo(void *a);
 void *Escalonador(void *a);
 void roundRobin(int id);
 void FCFS_SJF(int id);
+void SRTN(int id);
 void Operacao(int id, int cont);
 /*====================================== MAIN ==================================================*/
 
@@ -98,8 +101,9 @@ int main(int argc, char* argv[]) {
         if(numEscalonamento == 1 || numEscalonamento == 4){
 			insertOrderedByArrivedQueue(i);
 		}
-		else if(numEscalonamento == 2){
+		else if(numEscalonamento == 2 || numEscalonamento == 3){
 			insertOrderedByJobQueue(i);
+			qtdadeChegaram++;
 		}
 
 		/* sinaliza que chegou processo na fila */
@@ -129,30 +133,14 @@ int main(int argc, char* argv[]) {
 /*====================================== FUNCOES ==================================================*/
 
 /*************** THREADS **********************/
-void FCFS_SJF(int id) {
-	struct timeval inicioProcesso;
-	int cont = 0;
-	
-	sem_wait(&semThread[id]);	
-	gettimeofday(&inicioProcesso, NULL);
-
-	while ((tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
-		&& (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) {
-			Operacao(id, cont);
-			cont++;
-	}
-	
-	sem_post(&semCore);
-
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicioProcesso));
-}
-
 void *Processo(void *a) {
 	int* id = (int*) a;
 
 	if(numEscalonamento == 1 || numEscalonamento == 2) {
 		FCFS_SJF(*id);
+	}
+	else if(numEscalonamento == 3) {
+		SRTN(*id);
 	}
 	else if(numEscalonamento == 4) {
 		roundRobin(*id);
@@ -182,6 +170,58 @@ void roundRobin(int id) {
 		tabelaProcessos[id].dt > 0);
 }
 
+void SRTN(int id) {
+	int chegou;
+
+	while(tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline && 
+		tabelaProcessos[id].dt > 0) 
+	{	
+		sem_wait(&semThread[id]);
+		
+		chegou = qtdadeChegaram;
+
+		struct timeval inicioProcesso;
+		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
+												// eh escalonado
+		int cont = 0;
+
+		while (qtdadeChegaram - chegou == 0 && 
+			  tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
+			  tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
+		{
+			Operacao(id, cont);
+			cont++;					
+		}
+		printf("\n");
+
+		sem_wait(&mutexQueue);
+		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso);
+		sem_post(&mutexQueue);
+		
+		sem_post(&semCore);
+		sem_post(&semTroca);
+	}
+}
+
+void FCFS_SJF(int id) {
+	struct timeval inicioProcesso;
+	int cont = 0;
+	
+	sem_wait(&semThread[id]);	
+	gettimeofday(&inicioProcesso, NULL);
+
+	while ((tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
+		&& (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) {
+			Operacao(id, cont);
+			cont++;
+	}
+	
+	sem_post(&semCore);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicioProcesso));
+}
+
 void *Escalonador(void *a) {
 	if (numEscalonamento == 1 || numEscalonamento == 2) {
 		while (deadProc < nProcs) {
@@ -190,18 +230,35 @@ void *Escalonador(void *a) {
 			sem_wait(&semCore);
 			
 			Link next = getNextQueue(head);
-			tabelaProcessos[next->id].tempoRodada =tabelaProcessos[next->id].dt;
+			tabelaProcessos[next->id].tempoRodada = tabelaProcessos[next->id].dt;
 
 			sem_post(&semThread[next->id]);
 			
 			removeNextQueue(head);
 			
-			sem_post(&semQueue);
-
 			deadProc++;
 		} 
 	}
+	else if (numEscalonamento == 3) {
+		while (deadProc < nProcs) {
+			sem_wait(&semQueue);
+			
+			sem_wait(&semCore);
+			
+			Link next = getNextQueue(head);
+			
+			sem_post(&semThread[next->id]);
 
+			sem_wait(&semTroca);			
+			if(tabelaProcessos[next->id].dt <= 0){
+				removeNextQueue(head);
+				deadProc++;
+			}
+			else{
+				sem_post(&semQueue);
+			}
+		} 
+	}
 	else if (numEscalonamento == 4) {
 
 		while (deadProc < nProcs) {
@@ -424,6 +481,11 @@ void inicializacao() {
 
 	if (sem_init(&semCore, 0, 1)) {
 		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
+		exit(0);
+	}
+
+	if (sem_init(&semTroca, 0, 0)) {
+		fprintf(stderr, "ERRO ao criar semaforo semTroca\n");
 		exit(0);
 	}
 
