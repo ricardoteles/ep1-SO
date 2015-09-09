@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
 
 	qsort(tabelaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
 	
-	for(pos = 0; pos < nProcs; pos++){
+	for(pos = 0; pos < nProcs; pos++) {
 		tabelaProcessos[pos].id = pos;	
 	}
 
@@ -167,7 +167,7 @@ void roundRobin(int id) {
 		sem_post(&semCore);
 	
 	}	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
-		tabelaProcessos[id].dt > 0);
+		tabelaProcessos[id].tempoRodada > 0);
 }
 
 void SRTN(int id) {
@@ -237,7 +237,7 @@ void *Escalonador(void *a) {
 			removeNextQueue(head);
 			
 			deadProc++;
-		} 
+		}
 	}
 	else if (numEscalonamento == 3) {
 		while (deadProc < nProcs) {
@@ -250,14 +250,14 @@ void *Escalonador(void *a) {
 			sem_post(&semThread[next->id]);
 
 			sem_wait(&semTroca);			
-			if(tabelaProcessos[next->id].dt <= 0){
+			if(tabelaProcessos[next->id].dt <= 0) {
 				removeNextQueue(head);
 				deadProc++;
 			}
-			else{
+			else {
 				sem_post(&semQueue);
 			}
-		} 
+		}
 	}
 	else if (numEscalonamento == 4) {
 
@@ -281,7 +281,7 @@ void Operacao(int id, int cont) {
 
 /************************** QUEUE *****************************/
 void decreaseQuantumNextQueue() {
-	int id;
+	int id, tempoRodada;
 
 	id = removeQueue(); 
 	
@@ -289,15 +289,20 @@ void decreaseQuantumNextQueue() {
 	if (id != -1) { 
 		// definimos tempo do run da proxima rodada
 		if (tabelaProcessos[id].dt >= quantum) {
-			tabelaProcessos[id].tempoRodada = quantum;	
+			tempoRodada = quantum;
+			//tabelaProcessos[id].tempoRodada = quantum;	
 		} 
+		else if (tabelaProcessos[id].dt > 0) {
+			tempoRodada = tabelaProcessos[id].dt;
+		}
 		else {
-			tabelaProcessos[id].tempoRodada = tabelaProcessos[id].dt;
+			tempoRodada = 0;
 		}
 		
-		tabelaProcessos[id].dt -= tabelaProcessos[id].tempoRodada; // processo ainda vai rodar
+		tabelaProcessos[id].tempoRodada = tempoRodada;
+		tabelaProcessos[id].dt -= tempoRodada; // processo ainda vai rodar
 		
-		if (tabelaProcessos[id].dt > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
+		if (tabelaProcessos[id].tempoRodada > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
 			insertQueue(id);   // processo continua pra proxima rodada
 			sem_post(&semQueue);
 		}

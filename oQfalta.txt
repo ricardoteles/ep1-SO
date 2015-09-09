@@ -1,3 +1,5 @@
+1,2,1,2,3,1,3,1,3
+
 O que falta fazer?
 
 EP1.c
@@ -7,11 +9,13 @@ EP1.c
 - Round-Robin 										(OK)
 - Escalonamento com prioridade
 - deadlines rígidos
+- extender para varios cores os testes
 
 - gerar o arquivo de saida
 - verificar a compilação com warnings
 - separar em arquivos .h
 - fazer a opcao d (debug)
+- definir o quantum melhor
 
 EP1SH.c
 =======
