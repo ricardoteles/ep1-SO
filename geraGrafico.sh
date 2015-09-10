@@ -1,29 +1,35 @@
 #!/bin/bash
 
-numTestes=2				# nao pode ter espaco entre a variavel e o igual
-numEscalonadores=3      # nao pode ter espaco entre a variavel e o igual
-arquivos=("Pouco" "Medio" "Muito")
+numTestes=3					# nao pode ter espaco entre a variavel e o igual
+escalonador=3				    # nao pode ter espaco entre a variavel e o igual
+arquivos="Pouco"
 
 rm dados.txt
 make
 
-for item in "${arquivos[@]}"
-do
-	printf "=====================\n" >>  dados.txt
-	printf "    Arquivo: $item   \n" >>  dados.txt
-	printf "=====================\n\n" >>  dados.txt
-
-	for escalonador in $(seq $numEscalonadores)
-	do
-		printf "(Escalonador:$escalonador)-> [" >>  dados.txt
+printf "(Escalonador:$escalonador / mudancaContexto)-> [" >>  dadosMud.txt
+printf "(Escalonador:$escalonador / deadline)-> [" >>  dadosDead.txt
+printf "(Escalonador:$escalonador / justica)-> [" >>  dadosJust.txt
 		
-		for teste in $(seq $numTestes);
-		do
+for teste in $(seq $numTestes);
+do
+	./ep1 $escalonador traceEntrada$arquivos.txt saida 
+	cat mudancaContexto.txt >>  dadosMud.txt;
+	cat deadline.txt >>  dadosDead.txt;
+	cat justica.txt >>  dadosJust.txt;
 
-			./ep1 $escalonador traceEntrada$item.txt saida 
-			cat mudancaContexto.txt >>  dados.txt;
-			printf "," >>  dados.txt
-		done
-		printf "]\n\n" >>  dados.txt
-	done
+	printf "," >>  dadosMud.txt
+	printf "," >>  dadosDead.txt
+	printf "," >>  dadosJust.txt
 done
+printf "]\n\n" >>  dadosMud.txt
+printf "]\n\n" >>  dadosDead.txt
+printf "]\n\n" >>  dadosJust.txt
+
+cat dadosDead.txt >> dadosMud.txt
+cat dadosJust.txt >> dadosMud.txt
+
+mv dadosMud.txt dados.txt
+
+rm dadosDead.txt
+rm dadosJust.txt
