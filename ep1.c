@@ -8,7 +8,7 @@
 
 typedef struct {
 	float t0, dt, deadline, tempoRodada;
-	char nome[50];
+	char nome[50], lineTrace[100];
 	int p, id;
 } PROCESS;
 
@@ -19,52 +19,52 @@ typedef struct node {
 	Link next;
 } Node;
 
-
-/********************** VARIAVEIS GLOBAIS ****************************/
-int numEscalonamento, nCores = 0, debug = 0, nProcs = 0, deadProc = 0, mudancaContexto = 0; 
-int qtdadeChegaram = 0;
+/*=============================== VARIÁVEIS GLOBAIS =======================================*/
 PROCESS tabelaProcessos[NMAX_PROCS];
 FILE* arqEntrada, *arqSaida;
-struct timeval inicio;
-float quantum = 1.0;
 Link head, tail;
+
+struct timeval inicio;
+int numEscalonamento, nCores = 0, debug = 0;
+int nProcs = 0, deadProc = 0, mudancaContexto = 0; 
+int qtdadeChegaram = 0;
+float quantum = 1.0;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue, mutexQueue;
 sem_t semTroca;
 
-/*=============================== ASSINATURA DAS FUNCOES =======================================*/
+/*=============================== ASSINATURA DAS FUNCOES ===================================*/
 
-/************* INICIALIZACAO ******************/
+/*========================== UTILS ===============================*/
 void parserArgumentosEntrada(int argc, char* argv[]);
 void leArquivoEntrada();
-void inicializacao();
-/*************  UTILS ******************/
-int compare_arrive(const void *a,const void *b);
+void inicializaSemaforos();
 float tempoDesdeInicio(struct timeval inicio);
 void* mallocSeguro(size_t bytes);
-void imprimeSaida();
-/*************  QUEUE ******************/
+/*======================== ESCALONAMENTO =========================*/
+void decreaseQuantumNext();
+int compare_arrive(const void *a,const void *b);
+void *Escalonador(void *a);
+/*========================  QUEUE ==============================*/
 void initQueue();
 void insertOrderedByArrivedQueue(int id);
 void insertOrderedByJobQueue(int id);
-void insertQueue(int id);
 int removeQueue();
 void removeNextQueue(Link p);
 int emptyQueue();
 void printQueue();
 Link getNextQueue(Link p);
-void decreaseQuantumNextQueue();
 int unitQueue();
-/*************  THREADS ******************/
+/*========================  PROCESSO ==============================*/
 void *Processo(void *a);
-void *Escalonador(void *a);
-void roundRobin(int id);
-void FCFS_SJF(int id);
-void SRTN(int id);
+void RoundRobin(int id, float deadline);
+void FCFS_SJF(int id, float dt, float deadline);
+void SRTN(int id, float deadline);
 void Operacao(int id, int cont);
-/*====================================== MAIN ==================================================*/
 
+
+/*====================================== MAIN ==================================================*/
 int main(int argc, char* argv[]) {
 	gettimeofday(&inicio, NULL);
 	
@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 
 	parserArgumentosEntrada(argc, argv);
 	leArquivoEntrada();
-	inicializacao();
+	inicializaSemaforos();
 	initQueue();
 
 	qsort(tabelaProcessos, nProcs, sizeof(PROCESS), compare_arrive);
@@ -130,103 +130,13 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-/*====================================== FUNCOES ==================================================*/
+/*==========================  ESCALONAMENTO =====================================*/
+int compare_arrive(const void *a,const void *b) {
+	PROCESS *x = (PROCESS *) a;
+	PROCESS *y = (PROCESS *) b;
 
-/*************** THREADS **********************/
-void *Processo(void *a) {
-	int* id = (int*) a;
-
-	if(numEscalonamento == 1 || numEscalonamento == 2) {
-		FCFS_SJF(*id);
-	}
-	else if(numEscalonamento == 3) {
-		SRTN(*id);
-	}
-	else if(numEscalonamento == 4) {
-		roundRobin(*id);
-	}
-	return NULL;
-}
-
-void roundRobin(int id) {
-	struct timeval inicioProcesso;
-	
-	do {
-		sem_wait(&semThread[id]);
-	
-		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
-												// eh escalonado
-		int cont = 0;
-		while ((tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) &&
-			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
-		{
-			Operacao(id, cont);
-			cont++;					
-		}
-		printf("\n");
-		sem_post(&semCore);
-	
-	}	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
-		tabelaProcessos[id].tempoRodada > 0);
-
-
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
-}
-
-void SRTN(int id) {
-	struct timeval inicioProcesso;
-	int chegou;
-
-	while(tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline && 
-		tabelaProcessos[id].dt > 0) 
-	{	
-		sem_wait(&semThread[id]);
-		
-		chegou = qtdadeChegaram;
-
-		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
-												// eh escalonado
-		int cont = 0;
-
-		while (qtdadeChegaram - chegou == 0 && 
-			  tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
-			  tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
-		{
-			Operacao(id, cont);
-			cont++;					
-		}
-		printf("\n");
-
-		sem_wait(&mutexQueue);
-		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso);
-		sem_post(&mutexQueue);
-		
-		sem_post(&semCore);
-		sem_post(&semTroca);
-	}
-
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
-}
-
-void FCFS_SJF(int id) {
-	struct timeval inicioProcesso;
-	int cont = 0;
-	
-	sem_wait(&semThread[id]);	
-	gettimeofday(&inicioProcesso, NULL);
-
-	while ((tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
-		&& (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline)) {
-			Operacao(id, cont);
-			cont++;
-	}
-	
-	sem_post(&semCore);
-
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+	if (x->t0 < y->t0) return -1;
+	else if (x->t0 > y->t0) return 1; 
 }
 
 void *Escalonador(void *a) {
@@ -274,20 +184,13 @@ void *Escalonador(void *a) {
 		
 			sem_wait(&semCore);
 			
-			decreaseQuantumNextQueue();
+			decreaseQuantumNext();
 		} 
 	}
 	return NULL;
 }
 
-void Operacao(int id, int cont) {
-	if(cont < 3) {
-		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
-	}
-}
-
-/************************** QUEUE *****************************/
-void decreaseQuantumNextQueue() {
+void decreaseQuantumNext() {
 	int id, tempoRodada;
 
 	id = removeQueue(); 
@@ -310,7 +213,7 @@ void decreaseQuantumNextQueue() {
 		tabelaProcessos[id].dt -= tempoRodada; // processo ainda vai rodar
 		
 		if (tabelaProcessos[id].tempoRodada > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
-			insertQueue(id);   // processo continua pra proxima rodada
+			insertOrderedByArrivedQueue(id);   // processo continua pra proxima rodada
 			sem_post(&semQueue);
 		}
 		else {
@@ -324,6 +227,116 @@ void decreaseQuantumNextQueue() {
 	}
 }
 
+/*============================== PROCESSO =====================================*/
+void *Processo(void *a) {
+	int* id1 = (int*) a;
+	int id = (*id1);
+
+	if(numEscalonamento == 1 || numEscalonamento == 2) {
+		FCFS_SJF(id, tabelaProcessos[id].dt, tabelaProcessos[id].deadline);
+	}
+	else if(numEscalonamento == 3) {
+		SRTN(id, tabelaProcessos[id].deadline);
+	}
+	else if(numEscalonamento == 4) {
+		RoundRobin(id, tabelaProcessos[id].deadline);
+	}
+
+	return NULL;
+}
+
+void RoundRobin(int id, float deadline) {
+	struct timeval inicioProcesso;
+	
+	do {
+		sem_wait(&semThread[id]);
+	
+		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
+												// eh escalonado
+		int cont = 0;
+		while ((tempoDesdeInicio(inicio) < deadline) &&
+			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
+		{
+			Operacao(id, cont);
+			cont++;					
+		}
+		if (cont)
+			printf("\n");
+		
+		sem_post(&semCore);
+	
+	} while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].tempoRodada > 0);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+}
+
+void SRTN(int id, float deadline) {
+	struct timeval inicioProcesso;
+	int chegou;
+
+	while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0) 
+	{	
+		sem_wait(&semThread[id]);
+		
+		chegou = qtdadeChegaram;
+
+		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
+												// eh escalonado
+		int cont = 0;
+
+		while (qtdadeChegaram - chegou == 0 && 
+			  tempoDesdeInicio(inicio) < deadline &&
+			  tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
+		{
+			Operacao(id, cont);
+			cont++;					
+		}
+		
+		if (cont)
+			printf("\n");
+
+		sem_wait(&mutexQueue);
+		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso);
+		sem_post(&mutexQueue);
+		
+		sem_post(&semCore);
+		sem_post(&semTroca);
+	}
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+}
+
+void FCFS_SJF(int id, float dt, float deadline) {
+	struct timeval inicioProcesso;
+	int cont = 0;
+	
+	sem_wait(&semThread[id]);	
+	gettimeofday(&inicioProcesso, NULL);
+
+	while ((tempoDesdeInicio(inicioProcesso) < dt) 
+		&& (tempoDesdeInicio(inicio) < deadline)) {
+			Operacao(id, cont);
+			cont++;
+	}
+
+	if (cont)
+		printf("\n");
+
+	sem_post(&semCore);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+}
+
+void Operacao(int id, int cont) {
+	if(cont < 3) {
+		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
+	}
+}
+
+/*============================== QUEUE =====================================*/
 void removeNextQueue(Link p) {
 	sem_wait(&mutexQueue);
 
@@ -376,10 +389,6 @@ int removeQueue() {
 	sem_post(&mutexQueue);
 	
 	return content;
-}
-
-void insertQueue(int id) {
-	insertOrderedByArrivedQueue(id);
 }
 
 void insertOrderedByArrivedQueue(int id) {
@@ -437,7 +446,6 @@ void printQueue() {
 	sem_post(&mutexQueue);
 }
 
-// A fila não pode estar vazia para chamar a função
 Link getNextQueue(Link p) {
 	sem_wait(&mutexQueue);
 	Link next = p->next; 
@@ -446,7 +454,7 @@ Link getNextQueue(Link p) {
 	return next;
 }
 
-/************* INICIALIZACAO ******************/
+/*============================== UTILS =====================================*/
 void leArquivoEntrada() {
 	int i = 0;
 
@@ -488,7 +496,7 @@ void parserArgumentosEntrada(int argc, char* argv[]) {
 	}
 }
 
-void inicializacao() {
+void inicializaSemaforos() {
 	long i;
 
 	if (sem_init(&semCore, 0, 1)) {
@@ -519,17 +527,6 @@ void inicializacao() {
 	}
 }
 
-/************* UTILS ******************/
-int compare_arrive(const void *a,const void *b) {
-	PROCESS *x = (PROCESS *) a;
-	PROCESS *y = (PROCESS *) b;
-
-	if (x->t0 < y->t0) return -1;
-	else if (x->t0 > y->t0) return 1; 
-
-	return 0;
-}
-
 float tempoDesdeInicio(struct timeval inicio) {
 	struct timeval fim;
 	float timedif;
@@ -548,17 +545,4 @@ void* mallocSeguro(size_t bytes) {
 		exit(0);
 	}
 	return p;
-}
-
-void imprimeSaida() {
-	int i;
-
-	for (i = 0; i < nProcs; i++) {
-		// fprintf(arqSaida ,"Nome: %s\n", tabelaProcessos[i].nome);
-		// fprintf(arqSaida ,"t0: %f\n", tabelaProcessos[i].t0);
-		// fprintf(arqSaida ,"dt: %f\n", tabelaProcessos[i].dt);
-		// fprintf(arqSaida ,"deadline: %f\n", tabelaProcessos[i].deadline);
-		// fprintf(arqSaida ,"p: %d\n\n", tabelaProcessos[i].p);
-		printf("id: %d\n", tabelaProcessos[i].id);
-	}
 }

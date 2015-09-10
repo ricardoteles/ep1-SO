@@ -3,9 +3,10 @@ O que falta fazer?
 EP1.c
 =====
 
-- Shortest Remaining Time Next							(OK)
-- Round-Robin 											(OK)
-- Escalonamento com prioridade						
+- imprimir mensagem da causa do término
+- Shortest Remaining Time Next						(OK)
+- Round-Robin 										(OK)
+- Escalonamento com prioridade
 - deadlines rígidos
 - extender para varios cores os testes										
 
