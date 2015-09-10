@@ -1,8 +1,5 @@
-//http://thobias.org/doc/er_c.html
-
 #include <readline/readline.h>
 #include <unistd.h>
-#include <regex.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,10 +15,7 @@ void criaPrefixoShell();
 void shell();
 void apagaMatriz();
 void parserCommand(char *line);
-void imprimeCommand();
-
 /****************************************/
-
 
 int main() {
 	criaPrefixoShell();
@@ -33,7 +27,6 @@ int main() {
 		apagaMatriz();
 		parserCommand(line);
 		shell();
-		//imprimeCommand();
 		line = readline(format);
 	} while(1);
 
@@ -60,8 +53,6 @@ void shell(){
 	else if (strcmp(command[0],"/bin/ls") == 0) {
 		char *argv[] = {command[0], command[1], NULL};
 		if (fork() == 0) {
-    		//char* env[] = {(char*) 0};
-			//char* cmd[] = {"/bin/ls", "-1", (char*) 0};
 			execve(command[0], argv, NULL);
 		}
 		else {
@@ -69,12 +60,15 @@ void shell(){
 		}
 	}
 	else if (strcmp(command[0], "./ep1") == 0) {
-		char *argv[] = {command[0], command[1], command[2], command[3], NULL};
-		if (command[4][0] != 0) {
-			//argv[] = {command[0], command[1], command[2], command[3], command[4], NULL};
-			argv[4] = command[4];
+		int i;
+	 	char *argv[] = {command[0], NULL, NULL, NULL, NULL, NULL};
+	 	 
+	 	for (i = 1; i <= 5; i++) {
+		 	if (command[i][0] != '\0') {
+		 		argv[i] = command[i];
+		 	}
+		 	else break;
 		}
-
 		if (fork() == 0) {
 			execve(command[0], argv, NULL);
 		}
@@ -112,15 +106,4 @@ void parserCommand(char *line){
 			col = 0;
 		}
 	}
-}
-
-/************** FUNCOES TESTES **************************/
-
-void imprimeCommand(){
-	int i, j;
-
-	for(i = 0; command[i][0] != 0; i++){
-		printf("%s ", command[i]);
-	}
-	printf("\n");
 }

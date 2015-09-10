@@ -3,29 +3,20 @@ O que falta fazer?
 EP1.c
 =====
 
+- extender para varios cores os testes															    
+- definir o quantum e o usleep melhor
 - imprimir mensagem da causa do término
-- Shortest Remaining Time Next						(OK)
-- Round-Robin 										(OK)
-- Escalonamento com prioridade
-- deadlines rígidos
-- extender para varios cores os testes										
-
-- gerar o arquivo de saida 							    RICARDO
-- definir o quantum e o usleep melhor					FABIO
 - fazer a opcao d (debug)
+- Escalonamento com prioridade
 - verificar a compilação com warnings					(VER DEPOIS)
-- separar em arquivos .h								(VER DEPOIS)
+- deadlines rígidos
 
-EP1SH.c
-=======
-
-- verificar a validação dos comandos do shell
 
 APRESENTAÇÃO
 ============
 
-- testar mais vezes para outros casos					FABIO
-- gerar os graficos										RICARDO
+- testar mais vezes para outros casos
+- gerar os graficos
 
 /***************** ERROS *********************/
 
@@ -40,7 +31,7 @@ Verificar o que está acontecendo nos seguintes casos:
 
 Saida deveria ser: 1,3,1,3,2,2,4,4
 
-2) ROUND ROBIN:
+2) ROUND ROBIN: (PARECE ESTAR OK)
 
 1 processo1 2 20 2
 1 processo2 3 20 2
@@ -49,11 +40,17 @@ Saida deveria ser: 1,3,1,3,2,2,4,4
 
 Saida deveria ser: 1,2,3,4,1,2,4,2,4,4
 
+3) SRTN 
+
+0.5 processo1 9 20 2
+1 processo2 2 20 2
+6 processo3 2 8 2
 
 /****************** FEITO ******************/ 
 
-LEIAME
-======
-
 - escrever o que precisa fazer para compilar e rodar o codigo
 - listar todas as dependencias de compilação e execução
+- Shortest Remaining Time Next
+- Round-Robin						
+- gerar o arquivo de saida
+- verificar a validação dos comandos do shell

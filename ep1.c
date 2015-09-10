@@ -191,7 +191,8 @@ void *Escalonador(void *a) {
 }
 
 void decreaseQuantumNext() {
-	int id, tempoRodada;
+	int id;
+	float tempoRodada;
 
 	id = removeQueue(); 
 	
@@ -214,6 +215,7 @@ void decreaseQuantumNext() {
 		
 		if (tabelaProcessos[id].tempoRodada > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
 			insertOrderedByArrivedQueue(id);   // processo continua pra proxima rodada
+			mudancaContexto++;
 			sem_post(&semQueue);
 		}
 		else {
@@ -247,6 +249,7 @@ void *Processo(void *a) {
 
 void RoundRobin(int id, float deadline) {
 	struct timeval inicioProcesso;
+	float tempoFim;
 	
 	do {
 		sem_wait(&semThread[id]);
@@ -267,12 +270,15 @@ void RoundRobin(int id, float deadline) {
 	
 	} while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].tempoRodada > 0);
 
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+	tempoFim = tempoDesdeInicio(inicio);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+		tempoFim - tabelaProcessos[id].t0);
 }
 
 void SRTN(int id, float deadline) {
 	struct timeval inicioProcesso;
+	float tempoFim;
 	int chegou;
 
 	while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0) 
@@ -302,15 +308,22 @@ void SRTN(int id, float deadline) {
 		
 		sem_post(&semCore);
 		sem_post(&semTroca);
-	}
 
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+		if(tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0){
+			mudancaContexto++;
+		}
+	}
+	
+	tempoFim = tempoDesdeInicio(inicio);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+		tempoFim - tabelaProcessos[id].t0);
 }
 
 void FCFS_SJF(int id, float dt, float deadline) {
 	struct timeval inicioProcesso;
 	int cont = 0;
+	float tempoFim;
 	
 	sem_wait(&semThread[id]);	
 	gettimeofday(&inicioProcesso, NULL);
@@ -326,8 +339,10 @@ void FCFS_SJF(int id, float dt, float deadline) {
 
 	sem_post(&semCore);
 
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
+	tempoFim = tempoDesdeInicio(inicio);
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+		tempoFim - tabelaProcessos[id].t0);
 }
 
 void Operacao(int id, int cont) {
