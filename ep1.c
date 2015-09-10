@@ -28,11 +28,15 @@ struct timeval inicio;
 int numEscalonamento, nCores = 0, debug = 0;
 int nProcs = 0, deadProc = 0, mudancaContexto = 0; 
 int qtdadeChegaram = 0;
-float quantum = 1.0;
+float quantum = 0.2;
 
 sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue, mutexQueue;
 sem_t semTroca;
+
+FILE *arqMudContexto;
+FILE *arqDeadline;
+int qtdadeDeadline = 0;
 
 /*=============================== ASSINATURA DAS FUNCOES ===================================*/
 
@@ -126,6 +130,15 @@ int main(int argc, char* argv[]) {
 
 	fclose(arqEntrada);
 	fclose(arqSaida);
+
+    arqMudContexto = fopen("mudancaContexto.txt", "w");
+    arqDeadline = fopen("deadline.txt", "w");
+
+    fprintf(arqMudContexto, "%d", mudancaContexto);
+    fprintf(arqDeadline, "%d", qtdadeDeadline);
+
+	fclose(arqMudContexto);
+	fclose(arqDeadline);
 
 	return 0;
 }
@@ -491,7 +504,7 @@ void parserArgumentosEntrada(int argc, char* argv[]) {
 			exit(0);
 		}  
 		
-		arqSaida = fopen(argv[3], "w");;
+		arqSaida = fopen(argv[3], "w");
 
 		// descobre a qtde de nucleos do computador
 		nCores = sysconf(_SC_NPROCESSORS_ONLN);
@@ -514,7 +527,7 @@ void parserArgumentosEntrada(int argc, char* argv[]) {
 void inicializaSemaforos() {
 	long i;
 
-	if (sem_init(&semCore, 0, 1)) {
+	if (sem_init(&semCore, 0, nCores)) {
 		fprintf(stderr, "ERRO ao criar semaforo semCore\n");
 		exit(0);
 	}

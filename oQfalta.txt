@@ -3,11 +3,9 @@ O que falta fazer?
 EP1.c
 =====
 
-- extender para varios cores os testes															    
-- definir o quantum e o usleep melhor
+- Escalonamento com prioridade
 - imprimir mensagem da causa do término
 - fazer a opcao d (debug)
-- Escalonamento com prioridade
 - verificar a compilação com warnings					(VER DEPOIS)
 - deadlines rígidos
 
@@ -54,3 +52,5 @@ Saida deveria ser: 1,2,3,4,1,2,4,2,4,4
 - Round-Robin						
 - gerar o arquivo de saida
 - verificar a validação dos comandos do shell
+- extender para varios cores os testes															    
+- definir o quantum e o usleep melhor
