@@ -11,9 +11,9 @@ EP1.c
 
 - gerar o arquivo de saida 							    RICARDO
 - definir o quantum e o usleep melhor					FABIO
-- verificar a compilação com warnings					FABIO
-- separar em arquivos .h								FABIO
 - fazer a opcao d (debug)
+- verificar a compilação com warnings					(VER DEPOIS)
+- separar em arquivos .h								(VER DEPOIS)
 
 EP1SH.c
 =======

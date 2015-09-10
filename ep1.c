@@ -149,11 +149,11 @@ void *Processo(void *a) {
 }
 
 void roundRobin(int id) {
+	struct timeval inicioProcesso;
 	
 	do {
 		sem_wait(&semThread[id]);
 	
-		struct timeval inicioProcesso;
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
 		int cont = 0;
@@ -168,9 +168,14 @@ void roundRobin(int id) {
 	
 	}	while (tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline &&
 		tabelaProcessos[id].tempoRodada > 0);
+
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
 }
 
 void SRTN(int id) {
+	struct timeval inicioProcesso;
 	int chegou;
 
 	while(tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline && 
@@ -180,7 +185,6 @@ void SRTN(int id) {
 		
 		chegou = qtdadeChegaram;
 
-		struct timeval inicioProcesso;
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
 		int cont = 0;
@@ -201,6 +205,9 @@ void SRTN(int id) {
 		sem_post(&semCore);
 		sem_post(&semTroca);
 	}
+
+	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
 }
 
 void FCFS_SJF(int id) {
@@ -219,7 +226,7 @@ void FCFS_SJF(int id) {
 	sem_post(&semCore);
 
 	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoDesdeInicio(inicio), 
-		tempoDesdeInicio(inicioProcesso));
+		tempoDesdeInicio(inicio) - tabelaProcessos[id].t0);
 }
 
 void *Escalonador(void *a) {
