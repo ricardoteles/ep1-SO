@@ -7,7 +7,7 @@
 #define NMAX_PROCS 100
 
 typedef struct {
-	float t0, dt, deadline, tempoRodada;
+	float t0, dt, deadline, tempoRodada, tempoTotal, tempoUso;
 	char nome[50], lineTrace[100];
 	int p, id;
 } PROCESS;
@@ -27,12 +27,16 @@ Link head, tail;
 struct timeval inicio;
 int numEscalonamento, nCores = 0, debug = 0;
 int nProcs = 0, deadProc = 0, mudancaContexto = 0; 
-int qtdadeChegaram = 0;
+
+
+int qtdadeChegaram = 0; // qtd de processos que vão chegando durante 
+						// a execução do escalonador SRTN;
+						// os processos iniciais na fila não contam
 float quantum = 0.2;
 
 sem_t semCore, semThread[NMAX_PROCS];
-sem_t semQueue, mutexQueue;
-sem_t semTroca;
+sem_t semQueue, mutexQueue; // este ultimo para exclusão mutua da fila de processos
+sem_t semTroca;	
 
 FILE *arqMudContexto;
 FILE *arqDeadline;
@@ -102,10 +106,10 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
 
-        if(numEscalonamento == 1 || numEscalonamento == 4){
+        if(numEscalonamento == 1 || numEscalonamento == 4) {
 			insertOrderedByArrivedQueue(i);
 		}
-		else if(numEscalonamento == 2 || numEscalonamento == 3){
+		else if(numEscalonamento == 2 || numEscalonamento == 3) {
 			insertOrderedByJobQueue(i);
 			qtdadeChegaram++;
 		}
@@ -135,6 +139,13 @@ int main(int argc, char* argv[]) {
     arqDeadline = fopen("deadline.txt", "w");
 
     fprintf(arqMudContexto, "%d", mudancaContexto);
+
+    for (i = 0; i < nProcs; i++) {
+    	if (tabelaProcessos[i].tempoUso < tabelaProcessos[i].tempoTotal) {
+    		qtdadeDeadline++;
+    	}
+    }
+
     fprintf(arqDeadline, "%d", qtdadeDeadline);
 
 	fclose(arqMudContexto);
@@ -157,7 +168,7 @@ void *Escalonador(void *a) {
 		while (deadProc < nProcs) {
 			sem_wait(&semQueue);
 			
-			sem_wait(&semCore);
+			sem_wait(&semCore); // quer Core pra mandar alguém executar
 			
 			Link next = getNextQueue(head);
 			tabelaProcessos[next->id].tempoRodada = tabelaProcessos[next->id].dt;
@@ -179,23 +190,24 @@ void *Escalonador(void *a) {
 			
 			sem_post(&semThread[next->id]);
 
-			sem_wait(&semTroca);			
+			// espera chegar processos atrasados
+			sem_wait(&semTroca); 			
+
 			if(tabelaProcessos[next->id].dt <= 0) {
 				removeNextQueue(head);
 				deadProc++;
 			}
 			else {
-				sem_post(&semQueue);
+				sem_post(&semQueue); // sinaliza pro escalonador que continua na fila
 			}
 		}
 	}
 	else if (numEscalonamento == 4) {
 
 		while (deadProc < nProcs) {
-			//printf("deadProc = %d\n", deadProc);
-			sem_wait(&semQueue);
+			sem_wait(&semQueue); // espera a fila não estar vazia
 		
-			sem_wait(&semCore);
+			sem_wait(&semCore); 
 			
 			decreaseQuantumNext();
 		} 
@@ -203,6 +215,7 @@ void *Escalonador(void *a) {
 	return NULL;
 }
 
+// decrementa quantum da proxima rodada e manda executar
 void decreaseQuantumNext() {
 	int id;
 	float tempoRodada;
@@ -211,25 +224,25 @@ void decreaseQuantumNext() {
 	
 	// fila não estava vazia
 	if (id != -1) { 
-		// definimos tempo do run da proxima rodada
+
+		// definimos tempo do run da rodada atual
 		if (tabelaProcessos[id].dt >= quantum) {
-			tempoRodada = quantum;
-			//tabelaProcessos[id].tempoRodada = quantum;	
+			tempoRodada = quantum;	
 		} 
 		else if (tabelaProcessos[id].dt > 0) {
 			tempoRodada = tabelaProcessos[id].dt;
 		}
 		else {
-			tempoRodada = 0;
+			tempoRodada = 0; // condição de parada
 		}
 		
 		tabelaProcessos[id].tempoRodada = tempoRodada;
-		tabelaProcessos[id].dt -= tempoRodada; // processo ainda vai rodar
+		tabelaProcessos[id].dt -= tempoRodada; // decrementa do total
 		
 		if (tabelaProcessos[id].tempoRodada > 0 && tempoDesdeInicio(inicio) < tabelaProcessos[id].deadline) {	
-			insertOrderedByArrivedQueue(id);   // processo continua pra proxima rodada
+			insertOrderedByArrivedQueue(id);   // move o mesmo processo pro fim da fila, mesmo se dt == 0
 			mudancaContexto++;
-			sem_post(&semQueue);
+			sem_post(&semQueue); 
 		}
 		else {
 			// deixa o processo removido e contabiliza qtos processos terminaram
@@ -238,7 +251,8 @@ void decreaseQuantumNext() {
 			sem_post(&mutexQueue);
 		}
 		
-		sem_post(&semThread[id]); // sinaliza o próximo processo da fila
+		// sinaliza o processo que foi removido da fila pra rodar ou retomar execução
+		sem_post(&semThread[id]); 
 	}
 }
 
@@ -260,9 +274,10 @@ void *Processo(void *a) {
 	return NULL;
 }
 
+// função chamada pelo processo no escalonamento 4
 void RoundRobin(int id, float deadline) {
 	struct timeval inicioProcesso;
-	float tempoFim;
+	float tempoFim, start;
 	
 	do {
 		sem_wait(&semThread[id]);
@@ -270,12 +285,17 @@ void RoundRobin(int id, float deadline) {
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
 		int cont = 0;
+		start = tempoDesdeInicio(inicioProcesso);
+
 		while ((tempoDesdeInicio(inicio) < deadline) &&
 			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
 		{
 			Operacao(id, cont);
 			cont++;					
 		}
+		
+		tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
+		
 		if (cont)
 			printf("\n");
 		
@@ -283,27 +303,30 @@ void RoundRobin(int id, float deadline) {
 	
 	} while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].tempoRodada > 0);
 
-	tempoFim = tempoDesdeInicio(inicio);
+	tempoFim = tempoDesdeInicio(inicio); // informação de saída
 
 	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
 		tempoFim - tabelaProcessos[id].t0);
 }
 
+// função chamada pelo processo no escalonamento 3
 void SRTN(int id, float deadline) {
 	struct timeval inicioProcesso;
-	float tempoFim;
-	int chegou;
+	float tempoFim, start;
+	int chegou; 
 
 	while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0) 
 	{	
 		sem_wait(&semThread[id]);
 		
-		chegou = qtdadeChegaram;
+		chegou = qtdadeChegaram; 
 
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
 		int cont = 0;
 
+		start = tempoDesdeInicio(inicioProcesso);
+		// excedente de nós que chegaram mais recentemente é maior q zero ?
 		while (qtdadeChegaram - chegou == 0 && 
 			  tempoDesdeInicio(inicio) < deadline &&
 			  tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
@@ -311,20 +334,25 @@ void SRTN(int id, float deadline) {
 			Operacao(id, cont);
 			cont++;					
 		}
+
+		tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
 		
 		if (cont)
 			printf("\n");
 
 		sem_wait(&mutexQueue);
-		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso);
+		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso); // define tempo restante
 		sem_post(&mutexQueue);
 		
 		sem_post(&semCore);
-		sem_post(&semTroca);
 
 		if(tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0){
 			mudancaContexto++;
 		}
+		
+		sem_post(&semTroca); // sinaliza pro escalonador que pode escalonar o 
+							//  próximo da fila (a inserção ja ordena)  => mudei pra baixo
+						
 	}
 	
 	tempoFim = tempoDesdeInicio(inicio);
@@ -333,24 +361,29 @@ void SRTN(int id, float deadline) {
 		tempoFim - tabelaProcessos[id].t0);
 }
 
+// função chamada pelo processo no escalonamento 1 e 2
 void FCFS_SJF(int id, float dt, float deadline) {
 	struct timeval inicioProcesso;
 	int cont = 0;
-	float tempoFim;
+	float tempoFim, start;
 	
-	sem_wait(&semThread[id]);	
+	sem_wait(&semThread[id]);	// aguarda autorização do escalonador pra poder rodar
 	gettimeofday(&inicioProcesso, NULL);
 
+	start = tempoDesdeInicio(inicioProcesso);
+	
 	while ((tempoDesdeInicio(inicioProcesso) < dt) 
 		&& (tempoDesdeInicio(inicio) < deadline)) {
 			Operacao(id, cont);
 			cont++;
 	}
 
+	tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
+
 	if (cont)
 		printf("\n");
 
-	sem_post(&semCore);
+	sem_post(&semCore); // libera Core
 
 	tempoFim = tempoDesdeInicio(inicio);
 
@@ -358,6 +391,7 @@ void FCFS_SJF(int id, float dt, float deadline) {
 		tempoFim - tabelaProcessos[id].t0);
 }
 
+// Definimos uma operação qualquer
 void Operacao(int id, int cont) {
 	if(cont < 3) {
 		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
@@ -488,7 +522,10 @@ void leArquivoEntrada() {
 
 	while (fscanf(arqEntrada,"%f %s %f %f %d", &tabelaProcessos[i].t0, tabelaProcessos[i].nome, 
 		&tabelaProcessos[i].dt, &tabelaProcessos[i].deadline, &tabelaProcessos[i].p) != EOF) {		
-			i++;
+		
+		tabelaProcessos[i].tempoTotal = tabelaProcessos[i].dt; 
+		tabelaProcessos[i].tempoUso = 0; 
+		i++;
 	}
 
 	nProcs = i;
