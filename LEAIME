@@ -1,13 +1,15 @@
 										LEAIME
 ==========================================================================================================
 
-Ambos os programas abaixo compilam e executam na distribuição Debian.
+Ambos os programas abaixo compilam e executam na distribuição Debian. O comando make gera automaticamente 
+os dois binários abaixo de uma só vez.
 
 /*****************************************/
 /*    Como compilar e executar o ep1 ?   */
 /*****************************************/
 
-1) Para compilar e excutar o ep1(simulador de processos) basta abrir o terminal e digitar:
+1) Para compilar e executar o ep1 (simulador de processos), é necessário ter a 
+biblioteca pthreads. Basta abrir o terminal e digitar:
 
 $ make 
 $ ./ep1
@@ -40,16 +42,15 @@ Onde:
 /*******************************************/
 
 
-1) Para compilar o ep1sh é necessário ter o pacote "libreadline-dev"(no Debian) instalado, já que o programa usa as funcionalidades das bibliotecas GNU readline e GNU history. Mais informações podem ser vistas na documentacão da biblioteca em ftp://ftp.gnu.org/pub/gnu/readline/
+1) Para compilar e rodar o ep1sh é necessário ter o pacote libreadline-dev (no Debian) já instalado, já que o programa usa as funcionalidades das bibliotecas GNU readline e GNU history, conforme solicitado no enunciado do EP1. 
 
-
-2) Com a instalação feita, basta abrir o terminal e digitar:
+2) Com a instalação do pacote já feita, basta abrir o terminal e digitar:
 
 $ make 
 $ ./ep1sh
 
 
-3) Depois disso abrirá o SHELL EP1. Esse shell aceita os seguintes comandos (sem as aspas):
+3) Depois disso abrirá o Shell do EP1. Esse shell aceita os seguintes comandos (sem as aspas):
 
 -> "/bin/ls -1": lista na vertical os arquivos e diretórios do diretório corrente
 
@@ -57,8 +58,8 @@ $ ./ep1sh
 
 -> "cd <novo diretório para mudar>": muda para o diretório especificado (e válido)
 
--> "pwd": imprime o nome do diretório corrente
+-> "pwd": imprime o caminho do diretório corrente
 
--> "exit": fecha o SHELL EP1
+-> "exit": fecha o Shell do EP1
 
 ==========================================================================================================
