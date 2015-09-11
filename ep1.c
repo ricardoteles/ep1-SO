@@ -199,7 +199,7 @@ void *Escalonador(void *a) {
 			// espera chegar processos atrasados
 			sem_wait(&semTroca); 			
 
-			if(tabelaProcessos[next->id].dt <= 0) {
+			if(tabelaProcessos[next->id].dt <= 0 || tabelaProcessos[next->id].deadline < tempoDesdeInicio(inicio)) {
 				removeNextQueue(head);
 				deadProc++;
 			}
@@ -363,7 +363,7 @@ void SRTN(int id, float deadline) {
 						
 	}
 
-	if (tempoDesdeInicio(inicioProcesso) > deadline) 
+	if (tempoDesdeInicio(inicio) > deadline) 
 		qtdadeDeadline++;
 	
 	tempoFim = tempoDesdeInicio(inicio);
