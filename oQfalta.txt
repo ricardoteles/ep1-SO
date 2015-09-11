@@ -8,7 +8,7 @@ EP1.c
 - fazer a opcao d (debug)
 - verificar a compilação com warnings					(VER DEPOIS)
 - deadlines rígidos
-
+- informar as configurações das maquinas
 
 APRESENTAÇÃO
 ============
