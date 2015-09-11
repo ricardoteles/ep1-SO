@@ -7,8 +7,8 @@
 #define NMAX_PROCS 100
 
 typedef struct {
-	float t0, dt, deadline, tempoRodada, tempoTotal, tempoUso;
-	char nome[50], lineTrace[100];
+	float t0, dt, deadline, tempoRodada, tempoJob, tempoUso;
+	char nome[50];
 	int p, id;
 } PROCESS;
 
@@ -40,6 +40,8 @@ sem_t semTroca;
 
 FILE *arqMudContexto;
 FILE *arqDeadline;
+FILE *arqJustica;
+
 int qtdadeDeadline = 0;
 
 /*=============================== ASSINATURA DAS FUNCOES ===================================*/
@@ -137,16 +139,20 @@ int main(int argc, char* argv[]) {
 
     arqMudContexto = fopen("mudancaContexto.txt", "w");
     arqDeadline = fopen("deadline.txt", "w");
+    arqJustica = fopen("justica.txt", "w");
 
     fprintf(arqMudContexto, "%d", mudancaContexto);
 
+    float mediaJustica = 0;
+
     for (i = 0; i < nProcs; i++) {
-    	if (tabelaProcessos[i].tempoUso < tabelaProcessos[i].tempoTotal) {
-    		qtdadeDeadline++;
-    	}
+    	mediaJustica += (tabelaProcessos[i].tempoUso/tabelaProcessos[i].tempoJob);
     }
 
+    mediaJustica /= nProcs;
+
     fprintf(arqDeadline, "%d", qtdadeDeadline);
+    fprintf(arqJustica, "%.2f", mediaJustica);
 
 	fclose(arqMudContexto);
 	fclose(arqDeadline);
@@ -277,7 +283,7 @@ void *Processo(void *a) {
 // função chamada pelo processo no escalonamento 4
 void RoundRobin(int id, float deadline) {
 	struct timeval inicioProcesso;
-	float tempoFim, start;
+	float tempoFim;
 	
 	do {
 		sem_wait(&semThread[id]);
@@ -285,7 +291,6 @@ void RoundRobin(int id, float deadline) {
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
 		int cont = 0;
-		start = tempoDesdeInicio(inicioProcesso);
 
 		while ((tempoDesdeInicio(inicio) < deadline) &&
 			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
@@ -294,7 +299,7 @@ void RoundRobin(int id, float deadline) {
 			cont++;					
 		}
 		
-		tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
+		tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
 		
 		if (cont)
 			printf("\n");
@@ -305,6 +310,9 @@ void RoundRobin(int id, float deadline) {
 
 	tempoFim = tempoDesdeInicio(inicio); // informação de saída
 
+	if (tempoDesdeInicio(inicio) > deadline)
+		qtdadeDeadline++;
+
 	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
 		tempoFim - tabelaProcessos[id].t0);
 }
@@ -312,7 +320,7 @@ void RoundRobin(int id, float deadline) {
 // função chamada pelo processo no escalonamento 3
 void SRTN(int id, float deadline) {
 	struct timeval inicioProcesso;
-	float tempoFim, start;
+	float tempoFim;
 	int chegou; 
 
 	while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0) 
@@ -325,7 +333,6 @@ void SRTN(int id, float deadline) {
 												// eh escalonado
 		int cont = 0;
 
-		start = tempoDesdeInicio(inicioProcesso);
 		// excedente de nós que chegaram mais recentemente é maior q zero ?
 		while (qtdadeChegaram - chegou == 0 && 
 			  tempoDesdeInicio(inicio) < deadline &&
@@ -335,7 +342,8 @@ void SRTN(int id, float deadline) {
 			cont++;					
 		}
 
-		tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
+
+		tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
 		
 		if (cont)
 			printf("\n");
@@ -346,7 +354,7 @@ void SRTN(int id, float deadline) {
 		
 		sem_post(&semCore);
 
-		if(tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0){
+		if (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0){
 			mudancaContexto++;
 		}
 		
@@ -354,6 +362,9 @@ void SRTN(int id, float deadline) {
 							//  próximo da fila (a inserção ja ordena)  => mudei pra baixo
 						
 	}
+
+	if (tempoDesdeInicio(inicioProcesso) > deadline) 
+		qtdadeDeadline++;
 	
 	tempoFim = tempoDesdeInicio(inicio);
 
@@ -365,23 +376,24 @@ void SRTN(int id, float deadline) {
 void FCFS_SJF(int id, float dt, float deadline) {
 	struct timeval inicioProcesso;
 	int cont = 0;
-	float tempoFim, start;
+	float tempoFim;
 	
 	sem_wait(&semThread[id]);	// aguarda autorização do escalonador pra poder rodar
 	gettimeofday(&inicioProcesso, NULL);
 
-	start = tempoDesdeInicio(inicioProcesso);
-	
 	while ((tempoDesdeInicio(inicioProcesso) < dt) 
 		&& (tempoDesdeInicio(inicio) < deadline)) {
 			Operacao(id, cont);
 			cont++;
 	}
 
-	tabelaProcessos[id].tempoUso += (tempoDesdeInicio(inicioProcesso) - start);
+	tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
 
 	if (cont)
 		printf("\n");
+
+	if (tempoDesdeInicio(inicio) > deadline)
+		qtdadeDeadline++;
 
 	sem_post(&semCore); // libera Core
 
@@ -523,7 +535,7 @@ void leArquivoEntrada() {
 	while (fscanf(arqEntrada,"%f %s %f %f %d", &tabelaProcessos[i].t0, tabelaProcessos[i].nome, 
 		&tabelaProcessos[i].dt, &tabelaProcessos[i].deadline, &tabelaProcessos[i].p) != EOF) {		
 		
-		tabelaProcessos[i].tempoTotal = tabelaProcessos[i].dt; 
+		tabelaProcessos[i].tempoJob = tabelaProcessos[i].dt; 
 		tabelaProcessos[i].tempoUso = 0; 
 		i++;
 	}
