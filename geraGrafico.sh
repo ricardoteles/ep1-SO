@@ -1,7 +1,7 @@
 #!/bin/bash
 
-numTestes=3					# nao pode ter espaco entre a variavel e o igual
-escalonador=3				    # nao pode ter espaco entre a variavel e o igual
+numTestes=10					# nao pode ter espaco entre a variavel e o igual
+escalonador=2				    # nao pode ter espaco entre a variavel e o igual
 arquivos="Pouco"
 
 rm dados.txt

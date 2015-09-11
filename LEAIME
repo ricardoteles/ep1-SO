@@ -1,3 +1,7 @@
+Aluno: Fábio Eduardo Kaspar					NºUSP: 7991166
+Aluno: Ricardo Oliveira Teles				NºUSP: 7991444
+
+
 										LEAIME
 ==========================================================================================================
 
@@ -23,12 +27,12 @@ Formato esperado:
 Onde:
 
 -> num_escalonador: é um número de 1 a 6 que representa um dos escalonadores abaixo:
-		1. First-Come First-Served
-		2. Shortest Job First
-		3. Shortest Remaining Time Next
-		4. Round-Robin
-		5. Escalonamento com prioridade
-		6. Escalonamento em tempo real com deadlines rígidos
+		1. First-Come First-Served 										(implementado)
+		2. Shortest Job First 											(implementado)
+		3. Shortest Remaining Time Next 								(implementado)
+		4. Round-Robin 													(implementado)
+		5. Escalonamento com prioridade 								(não foi implementado)
+		6. Escalonamento em tempo real com deadlines rígidos 			(não foi implementado)
 
 -> arq_entrada: é um arquivo de entrada
 

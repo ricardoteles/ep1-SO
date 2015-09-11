@@ -21,6 +21,7 @@ typedef struct node {
 
 /*=============================== VARIÁVEIS GLOBAIS =======================================*/
 PROCESS tabelaProcessos[NMAX_PROCS];
+
 FILE* arqEntrada, *arqSaida;
 Link head, tail;
 
@@ -38,11 +39,6 @@ sem_t semCore, semThread[NMAX_PROCS];
 sem_t semQueue, mutexQueue; // este ultimo para exclusão mutua da fila de processos
 sem_t semTroca;	
 
-FILE *arqMudContexto;
-FILE *arqDeadline;
-FILE *arqJustica;
-
-int qtdadeDeadline = 0;
 
 /*=============================== ASSINATURA DAS FUNCOES ===================================*/
 
@@ -63,15 +59,13 @@ void insertOrderedByJobQueue(int id);
 int removeQueue();
 void removeNextQueue(Link p);
 int emptyQueue();
-void printQueue();
 Link getNextQueue(Link p);
-int unitQueue();
 /*========================  PROCESSO ==============================*/
 void *Processo(void *a);
 void RoundRobin(int id, float deadline);
 void FCFS_SJF(int id, float dt, float deadline);
 void SRTN(int id, float deadline);
-void Operacao(int id, int cont);
+void Operacao();
 
 
 /*====================================== MAIN ==================================================*/
@@ -108,6 +102,11 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
 
+        if (debug) {
+        	fprintf(stderr, "[t0=%.2f nome=%s dt=%.2f deadline=%.2f p=%d chegou]\n", tabelaProcessos[i].t0, tabelaProcessos[i].nome,
+        		tabelaProcessos[i].dt, tabelaProcessos[i].deadline, tabelaProcessos[i].p);
+        }
+
         if(numEscalonamento == 1 || numEscalonamento == 4) {
 			insertOrderedByArrivedQueue(i);
 		}
@@ -132,30 +131,14 @@ int main(int argc, char* argv[]) {
 		exit(1);
     }
 
+    if (debug) {
+		fprintf(stderr, "\n# mudanças de contexto: %d\n", mudancaContexto);
+	}
+
     fprintf(arqSaida, "%d", mudancaContexto);
 
 	fclose(arqEntrada);
 	fclose(arqSaida);
-
-    arqMudContexto = fopen("mudancaContexto.txt", "w");
-    arqDeadline = fopen("deadline.txt", "w");
-    arqJustica = fopen("justica.txt", "w");
-
-    fprintf(arqMudContexto, "%d", mudancaContexto);
-
-    float mediaJustica = 0;
-
-    for (i = 0; i < nProcs; i++) {
-    	mediaJustica += (tabelaProcessos[i].tempoUso/tabelaProcessos[i].tempoJob);
-    }
-
-    mediaJustica /= nProcs;
-
-    fprintf(arqDeadline, "%d", qtdadeDeadline);
-    fprintf(arqJustica, "%.2f", mediaJustica);
-
-	fclose(arqMudContexto);
-	fclose(arqDeadline);
 
 	return 0;
 }
@@ -177,7 +160,6 @@ void *Escalonador(void *a) {
 			sem_wait(&semCore); // quer Core pra mandar alguém executar
 			
 			Link next = getNextQueue(head);
-			tabelaProcessos[next->id].tempoRodada = tabelaProcessos[next->id].dt;
 
 			sem_post(&semThread[next->id]);
 			
@@ -287,34 +269,37 @@ void RoundRobin(int id, float deadline) {
 	
 	do {
 		sem_wait(&semThread[id]);
+
+		if (debug) {
+			fprintf(stderr, "Processo %s começou a usar a CPU.\n", tabelaProcessos[id].nome);
+		}
 	
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
-		int cont = 0;
 
 		while ((tempoDesdeInicio(inicio) < deadline) &&
 			  (tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].tempoRodada)) 
 		{
-			Operacao(id, cont);
-			cont++;					
+			Operacao();					
 		}
 		
-		tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
-		
-		if (cont)
-			printf("\n");
-		
 		sem_post(&semCore);
+
+		if (debug) {
+			fprintf(stderr, "Processo %s liberou a CPU.\n", tabelaProcessos[id].nome);
+		}
 	
 	} while (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].tempoRodada > 0);
 
 	tempoFim = tempoDesdeInicio(inicio); // informação de saída
 
-	if (tempoDesdeInicio(inicio) > deadline)
-		qtdadeDeadline++;
-
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+	fprintf(arqSaida, "%s %.3f %.3f\n", tabelaProcessos[id].nome, tempoFim, 
 		tempoFim - tabelaProcessos[id].t0);
+
+	if (debug) {
+		fprintf(stderr, "[nome=%s tf=%.3f tr=%.3f terminou]\n", 
+			tabelaProcessos[id].nome, tempoFim, tempoFim - tabelaProcessos[id].t0);
+	}
 }
 
 // função chamada pelo processo no escalonamento 3
@@ -327,32 +312,32 @@ void SRTN(int id, float deadline) {
 	{	
 		sem_wait(&semThread[id]);
 		
+		if (debug) {
+			fprintf(stderr, "Processo %s começou a usar a CPU.\n", tabelaProcessos[id].nome);
+		}
+
 		chegou = qtdadeChegaram; 
 
 		gettimeofday(&inicioProcesso, NULL);	//define o tempo inicial a cada vez que 
 												// eh escalonado
-		int cont = 0;
 
 		// excedente de nós que chegaram mais recentemente é maior q zero ?
 		while (qtdadeChegaram - chegou == 0 && 
 			  tempoDesdeInicio(inicio) < deadline &&
 			  tempoDesdeInicio(inicioProcesso) < tabelaProcessos[id].dt) 
 		{
-			Operacao(id, cont);
-			cont++;					
+			Operacao();			
 		}
-
-
-		tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
 		
-		if (cont)
-			printf("\n");
-
 		sem_wait(&mutexQueue);
 		tabelaProcessos[id].dt -= tempoDesdeInicio(inicioProcesso); // define tempo restante
 		sem_post(&mutexQueue);
 		
 		sem_post(&semCore);
+
+		if (debug) {
+			fprintf(stderr, "Processo %s liberou a CPU.\n", tabelaProcessos[id].nome);
+		}
 
 		if (tempoDesdeInicio(inicio) < deadline && tabelaProcessos[id].dt > 0){
 			mudancaContexto++;
@@ -362,52 +347,58 @@ void SRTN(int id, float deadline) {
 							//  próximo da fila (a inserção ja ordena)  => mudei pra baixo
 						
 	}
-
-	if (tempoDesdeInicio(inicio) > deadline) 
-		qtdadeDeadline++;
 	
 	tempoFim = tempoDesdeInicio(inicio);
 
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+	fprintf(arqSaida, "%s %.3f %.3f\n", tabelaProcessos[id].nome, tempoFim, 
 		tempoFim - tabelaProcessos[id].t0);
+
+	if (debug) {
+		fprintf(stderr, "[nome=%s tf=%.3f tr=%.3f terminou]\n", 
+			tabelaProcessos[id].nome, tempoFim, tempoFim - tabelaProcessos[id].t0);
+	}
 }
 
 // função chamada pelo processo no escalonamento 1 e 2
 void FCFS_SJF(int id, float dt, float deadline) {
 	struct timeval inicioProcesso;
-	int cont = 0;
 	float tempoFim;
 	
 	sem_wait(&semThread[id]);	// aguarda autorização do escalonador pra poder rodar
+
+	if (debug) {
+		fprintf(stderr, "Processo %s começou a usar a CPU.\n", tabelaProcessos[id].nome);
+	}
+
 	gettimeofday(&inicioProcesso, NULL);
 
 	while ((tempoDesdeInicio(inicioProcesso) < dt) 
 		&& (tempoDesdeInicio(inicio) < deadline)) {
-			Operacao(id, cont);
-			cont++;
+			Operacao();
 	}
-
-	tabelaProcessos[id].tempoUso += tempoDesdeInicio(inicioProcesso);
-
-	if (cont)
-		printf("\n");
-
-	if (tempoDesdeInicio(inicio) > deadline)
-		qtdadeDeadline++;
 
 	sem_post(&semCore); // libera Core
 
+	if (debug) {
+		fprintf(stderr, "Processo %s liberou a CPU.\n", tabelaProcessos[id].nome);
+	}
+
 	tempoFim = tempoDesdeInicio(inicio);
 
-	fprintf(arqSaida, "%s %f %f\n", tabelaProcessos[id].nome, tempoFim, 
+	fprintf(arqSaida, "%s %.3f %.3f\n", tabelaProcessos[id].nome, tempoFim, 
 		tempoFim - tabelaProcessos[id].t0);
+
+	if (debug) {
+		fprintf(stderr, "[nome=%s tf=%.3f tr=%.3f terminou]\n", 
+			tabelaProcessos[id].nome, tempoFim, tempoFim - tabelaProcessos[id].t0);
+	}	
 }
 
 // Definimos uma operação qualquer
-void Operacao(int id, int cont) {
-	if(cont < 3) {
-		printf("[Operação] %s : %d\n", tabelaProcessos[id].nome, cont);
-	}
+void Operacao() {
+	int x = 0;
+	x++;
+	if(x) x = 0;
 }
 
 /*============================== QUEUE =====================================*/
@@ -433,13 +424,6 @@ void initQueue() {
 	head = (Link) mallocSeguro(sizeof(Node));
 	head->next = head;
 	tail = head;
-}
-
-int unitQueue() {
-	sem_wait(&mutexQueue);
-	int condition = (head->next->next == head);
-	sem_post(&mutexQueue);
-	return condition;
 }
 
 int removeQueue() {
@@ -506,20 +490,6 @@ int emptyQueue() {
 	return condition;
 }
 
-void printQueue() {
-	Link aux;
-
-	printf("Fila:  ");
-	sem_wait(&mutexQueue);
-	
-	for (aux = head->next; aux != tail; aux = aux->next) {
-		printf("%s   ", tabelaProcessos[aux->id].nome);
-	}
-	printf("%s\n", tabelaProcessos[tail->id].nome);
-
-	sem_post(&mutexQueue);
-}
-
 Link getNextQueue(Link p) {
 	sem_wait(&mutexQueue);
 	Link next = p->next; 
@@ -557,14 +527,10 @@ void parserArgumentosEntrada(int argc, char* argv[]) {
 
 		// descobre a qtde de nucleos do computador
 		nCores = sysconf(_SC_NPROCESSORS_ONLN);
-		printf("Escalonador: %s\n", argv[1]);
-		printf("Arquivo de entrada: %s\n", argv[2]);
-		printf("Arquivo de saida: %s\n", argv[3]);
-		printf("# cores: %d\n\n", nCores);
-
+		
 		if(argc >= 5 && argv[4][0] == 'd' && argv[4][1] == '\0') {
 			debug = 1;
-			printf("Opção debug ativada.\n");
+			printf("Opção debug ativada.\n\n");
 		}
 	}
 	else {

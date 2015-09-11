@@ -4,16 +4,11 @@ EP1.c
 =====
 
 - Escalonamento com prioridade
-- imprimir mensagem da causa do término
-- fazer a opcao d (debug)
-- verificar a compilação com warnings					(VER DEPOIS)
-- deadlines rígidos
-- informar as configurações das maquinas
+
 
 APRESENTAÇÃO
 ============
 
-- testar mais vezes para outros casos
 - gerar os graficos
 
 /***************** ERROS *********************/
@@ -38,11 +33,7 @@ Saida deveria ser: 1,3,1,3,2,2,4,4
 
 Saida deveria ser: 1,2,3,4,1,2,4,2,4,4
 
-3) SRTN  (tem bug se tiver deadline -> programa não termina)
 
-0.5 processo1 9 20 2
-1 processo2 2 20 2
-6 processo3 2 8 2
 
 /****************** FEITO ******************/ 
 
